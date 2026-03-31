@@ -1,28 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme.dart';
-import '../providers/auth_provider.dart';
 import '../providers/dashboard_provider.dart';
 import '../models/dashboard_data.dart';
 import '../widgets/stat_pill.dart';
 import '../widgets/event_card.dart';
 import '../widgets/task_card.dart';
 import '../widgets/score_circle.dart';
-import 'tasks_screen.dart';
-import 'calendar_screen.dart';
 import 'create_event_sheet.dart';
 import 'overdue_review_screen.dart';
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class DashboardScreen extends StatefulWidget {
+  const DashboardScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  int _currentIndex = 0;
-
+class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
@@ -33,89 +28,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: const [
-          _DashboardTab(),
-          CalendarScreen(),
-          TasksScreen(),
-        ],
-      ),
-      bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: AppTheme.border)),
-        ),
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (i) => setState(() => _currentIndex = i),
-          backgroundColor: AppTheme.surface,
-          selectedItemColor: AppTheme.brand,
-          unselectedItemColor: AppTheme.textMuted,
-          type: BottomNavigationBarType.fixed,
-          selectedFontSize: 11,
-          unselectedFontSize: 11,
-          items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.dashboard_rounded), label: 'Dashboard'),
-            BottomNavigationBarItem(icon: Icon(Icons.calendar_month_rounded), label: 'Calendar'),
-            BottomNavigationBarItem(icon: Icon(Icons.checklist_rounded), label: 'Tasks'),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DashboardTab extends StatelessWidget {
-  const _DashboardTab();
-
-  String get _greeting {
-    final hour = DateTime.now().hour;
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
     final dash = context.watch<DashboardProvider>();
     final data = dash.data;
 
-    return SafeArea(
-      child: RefreshIndicator(
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Dashboard'),
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_rounded, color: AppTheme.textPrimary(context)),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: RefreshIndicator(
         color: AppTheme.brand,
-        backgroundColor: AppTheme.surface,
+        backgroundColor: AppTheme.surface(context),
         onRefresh: () => context.read<DashboardProvider>().loadDashboard(),
         child: CustomScrollView(
           slivers: [
-            // Header
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(_greeting, style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
-                          const SizedBox(height: 2),
-                          Text(auth.userName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => auth.logout(),
-                      icon: const Icon(Icons.logout_rounded, size: 20),
-                      color: AppTheme.textMuted,
-                      tooltip: 'Logout',
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
             // Overdue banner
             if (data.totalOverdue > 0)
               SliverToBoxAdapter(
@@ -141,12 +70,12 @@ class _DashboardTab extends StatelessWidget {
                             child: Center(child: Text('${data.totalOverdue}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFef4444)))),
                           ),
                           const SizedBox(width: 12),
-                          const Expanded(
+                          Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Overdue items need review', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFFef4444))),
-                                Text('Tap to resolve', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                                const Text('Overdue items need review', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFFef4444))),
+                                Text('Tap to resolve', style: TextStyle(fontSize: 11, color: AppTheme.textMuted(context))),
                               ],
                             ),
                           ),
@@ -191,9 +120,9 @@ class _DashboardTab extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
                 child: Row(
                   children: [
-                    const Text("Today's Agenda", style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+                    Text("Today's Agenda", style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textPrimary(context))),
                     const Spacer(),
-                    Text('${data.todayEvents.length} events', style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                    Text('${data.todayEvents.length} events', style: TextStyle(fontSize: 12, color: AppTheme.textMuted(context))),
                   ],
                 ),
               ),
@@ -207,30 +136,36 @@ class _DashboardTab extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 40),
                     decoration: BoxDecoration(
-                      color: AppTheme.surface,
+                      color: AppTheme.surface(context),
                       borderRadius: BorderRadius.circular(AppTheme.radius),
-                      border: Border.all(color: AppTheme.border),
+                      border: Border.all(color: AppTheme.borderColor(context)),
                     ),
                     child: Column(
                       children: [
                         Container(
                           width: 56, height: 56,
-                          decoration: const BoxDecoration(color: AppTheme.surface2, shape: BoxShape.circle),
-                          child: const Icon(Icons.calendar_today_rounded, color: AppTheme.textMuted, size: 28),
+                          decoration: BoxDecoration(color: AppTheme.surface2(context), shape: BoxShape.circle),
+                          child: Icon(Icons.calendar_today_rounded, color: AppTheme.textMuted(context), size: 28),
                         ),
                         const SizedBox(height: 12),
-                        const Text('No events today', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textSecondary)),
+                        Text('No events today', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textSecondary(context))),
                         const SizedBox(height: 12),
-                        GestureDetector(
-                          onTap: () => _showCreateEvent(context),
-                          child: Container(
+                        TextButton(
+                          onPressed: () {
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (_) => const CreateEventSheet(),
+                            );
+                          },
+                          style: TextButton.styleFrom(
+                            backgroundColor: AppTheme.brand.withValues(alpha: 0.1),
+                            foregroundColor: AppTheme.brand,
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: AppTheme.brand.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(AppTheme.radius),
-                            ),
-                            child: const Text('+ Add Event', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: AppTheme.brand)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radius)),
                           ),
+                          child: const Text('+ Add Event', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
                         ),
                       ],
                     ),
@@ -259,16 +194,9 @@ class _DashboardTab extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
                 child: Row(
                   children: [
-                    const Text('My Tasks', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+                    Text('My Tasks', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textPrimary(context))),
                     const SizedBox(width: 6),
-                    Text('${data.myTasks.length} open', style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
-                    const Spacer(),
-                    GestureDetector(
-                      onTap: () {
-                        // Switch to tasks tab via parent
-                      },
-                      child: const Text('View All →', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.brand)),
-                    ),
+                    Text('${data.myTasks.length} open', style: TextStyle(fontSize: 12, color: AppTheme.textMuted(context))),
                   ],
                 ),
               ),
@@ -299,11 +227,11 @@ class _DashboardTab extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Properties Needing Attention', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+                      Text('Properties Needing Attention', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textPrimary(context))),
                       const SizedBox(height: 4),
                       Text(
                         '${data.propHealthSummary.critical} critical · ${data.propHealthSummary.attention} attention · ${data.propHealthSummary.good} good',
-                        style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                        style: TextStyle(fontSize: 11, color: AppTheme.textMuted(context)),
                       ),
                     ],
                   ),
@@ -311,7 +239,7 @@ class _DashboardTab extends StatelessWidget {
               ),
               SliverToBoxAdapter(
                 child: SizedBox(
-                  height: 130,
+                  height: 145,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
@@ -344,24 +272,24 @@ class _DashboardTab extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Documents Awaiting Authorisation  (${data.candidateDocs.length})',
-                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textPrimary(context))),
                       const SizedBox(height: 8),
                       ...data.candidateDocs.map((doc) => Container(
                         margin: const EdgeInsets.only(bottom: 8),
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: AppTheme.surface,
+                          color: AppTheme.surface(context),
                           borderRadius: BorderRadius.circular(AppTheme.radius),
-                          border: Border.all(color: AppTheme.border),
+                          border: Border.all(color: AppTheme.borderColor(context)),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(doc.documentName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textPrimary)),
+                            Text(doc.documentName, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textPrimary(context))),
                             const SizedBox(height: 4),
                             Row(
                               children: [
-                                Text('Uploaded by ${doc.creatorName}', style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                                Text('Uploaded by ${doc.creatorName}', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary(context))),
                                 const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -412,15 +340,6 @@ class _DashboardTab extends StatelessWidget {
       MaterialPageRoute(builder: (_) => OverdueReviewScreen(tasks: data.overduePopupTasks, events: data.overduePopupEvents)),
     );
   }
-
-  void _showCreateEvent(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const CreateEventSheet(),
-    );
-  }
 }
 
 class _PropertyHealthCard extends StatelessWidget {
@@ -433,17 +352,18 @@ class _PropertyHealthCard extends StatelessWidget {
       width: 200,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
+        color: AppTheme.surface(context),
         borderRadius: BorderRadius.circular(AppTheme.radius),
-        border: Border.all(color: AppTheme.border),
+        border: Border.all(color: AppTheme.borderColor(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
-              ScoreCircle(score: health.score, size: 40),
-              const SizedBox(width: 10),
+              ScoreCircle(score: health.score, size: 36),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
@@ -455,12 +375,12 @@ class _PropertyHealthCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          Text(health.propertyAddress ?? 'Unknown', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textPrimary),
+          const SizedBox(height: 8),
+          Text(health.propertyAddress ?? 'Unknown', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppTheme.textPrimary(context)),
               maxLines: 2, overflow: TextOverflow.ellipsis),
           if (health.factors.isNotEmpty) ...[
             const SizedBox(height: 4),
-            Text(health.factors.first.label, style: const TextStyle(fontSize: 10, color: AppTheme.textMuted), maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text(health.factors.first.label, style: TextStyle(fontSize: 10, color: AppTheme.textMuted(context)), maxLines: 1, overflow: TextOverflow.ellipsis),
           ],
         ],
       ),
@@ -499,27 +419,27 @@ class _ScorecardSectionState extends State<_ScorecardSection> {
           child: Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: AppTheme.surface,
+              color: AppTheme.surface(context),
               borderRadius: BorderRadius.circular(AppTheme.radius),
-              border: Border.all(color: AppTheme.border),
+              border: Border.all(color: AppTheme.borderColor(context)),
             ),
             child: Row(
               children: [
                 ScoreCircle(score: sc.overallScore, size: 40),
                 const SizedBox(width: 12),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Agent Scorecard', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
-                      Text('Overall Performance', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                      Text('Agent Scorecard', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary(context))),
+                      Text('Overall Performance', style: TextStyle(fontSize: 11, color: AppTheme.textMuted(context))),
                     ],
                   ),
                 ),
                 AnimatedRotation(
                   turns: _expanded ? 0.5 : 0,
                   duration: const Duration(milliseconds: 200),
-                  child: const Icon(Icons.keyboard_arrow_down, size: 20, color: AppTheme.textMuted),
+                  child: Icon(Icons.keyboard_arrow_down, size: 20, color: AppTheme.textMuted(context)),
                 ),
               ],
             ),
@@ -531,9 +451,9 @@ class _ScorecardSectionState extends State<_ScorecardSection> {
             margin: const EdgeInsets.only(top: 8),
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: AppTheme.surface,
+              color: AppTheme.surface(context),
               borderRadius: BorderRadius.circular(AppTheme.radius),
-              border: Border.all(color: AppTheme.border),
+              border: Border.all(color: AppTheme.borderColor(context)),
             ),
             child: Column(
               children: [
@@ -565,14 +485,14 @@ class _MetricBar extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(label, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-            Text('$value/$total', style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary)),
+            Text(label, style: TextStyle(fontSize: 12, color: AppTheme.textSecondary(context))),
+            Text('$value/$total', style: TextStyle(fontSize: 12, color: AppTheme.textPrimary(context))),
           ],
         ),
         const SizedBox(height: 6),
         Container(
           height: 6,
-          decoration: BoxDecoration(color: AppTheme.surface2, borderRadius: BorderRadius.circular(3)),
+          decoration: BoxDecoration(color: AppTheme.surface2(context), borderRadius: BorderRadius.circular(3)),
           child: Align(
             alignment: Alignment.centerLeft,
             child: FractionallySizedBox(

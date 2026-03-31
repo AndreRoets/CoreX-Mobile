@@ -57,7 +57,7 @@ class TaskCard extends StatelessWidget {
         ),
       ),
       child: Material(
-        color: AppTheme.surface,
+        color: AppTheme.surface(context),
         borderRadius: BorderRadius.circular(AppTheme.radius),
         child: InkWell(
           onTap: onTap,
@@ -66,7 +66,7 @@ class TaskCard extends StatelessWidget {
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(AppTheme.radius),
-              border: Border.all(color: task.isOverdue ? const Color(0xFFef4444).withValues(alpha: 0.4) : AppTheme.border),
+              border: Border.all(color: task.isOverdue ? const Color(0xFFef4444).withValues(alpha: 0.4) : AppTheme.borderColor(context)),
             ),
             child: Row(
               children: [
@@ -78,7 +78,7 @@ class TaskCard extends StatelessWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: task.isOverdue ? const Color(0xFFef4444) : AppTheme.border,
+                        color: task.isOverdue ? const Color(0xFFef4444) : AppTheme.borderColor(context),
                         width: 2,
                       ),
                     ),
@@ -91,13 +91,13 @@ class TaskCard extends StatelessWidget {
                     children: [
                       Text(task.title,
                           style: TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textPrimary,
+                            fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textPrimary(context),
                             decoration: task.status == 'done' ? TextDecoration.lineThrough : null,
                           ),
                           maxLines: 1, overflow: TextOverflow.ellipsis),
                       if (task.propertyAddress != null) ...[
                         const SizedBox(height: 2),
-                        Text(task.propertyAddress!, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        Text(task.propertyAddress!, style: TextStyle(fontSize: 12, color: AppTheme.textSecondary(context)), maxLines: 1, overflow: TextOverflow.ellipsis),
                       ],
                     ],
                   ),
@@ -111,7 +111,7 @@ class TaskCard extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(
                         _formatDate(task.dueDate!),
-                        style: TextStyle(fontSize: 10, color: task.isOverdue ? const Color(0xFFef4444) : AppTheme.textMuted),
+                        style: TextStyle(fontSize: 10, color: task.isOverdue ? const Color(0xFFef4444) : AppTheme.textMuted(context)),
                       ),
                     ],
                   ],

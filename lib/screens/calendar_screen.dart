@@ -53,16 +53,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final events = context.watch<DashboardProvider>().events;
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: AppTheme.background(context),
       body: SafeArea(
         child: Column(
           children: [
             // Sticky header
             Container(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-              decoration: const BoxDecoration(
-                color: AppTheme.background,
-                border: Border(bottom: BorderSide(color: AppTheme.border)),
+              decoration: BoxDecoration(
+                color: AppTheme.background(context),
+                border: Border(bottom: BorderSide(color: AppTheme.borderColor(context))),
               ),
               child: Row(
                 children: [
@@ -71,23 +71,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     onTap: _previousMonth,
                     child: Container(
                       width: 40, height: 40,
-                      decoration: BoxDecoration(color: AppTheme.surface, borderRadius: BorderRadius.circular(AppTheme.radius)),
-                      child: const Icon(Icons.chevron_left, size: 20, color: AppTheme.textSecondary),
+                      decoration: BoxDecoration(color: AppTheme.surface(context), borderRadius: BorderRadius.circular(AppTheme.radius)),
+                      child: Icon(Icons.chevron_left, size: 20, color: AppTheme.textSecondary(context)),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       _monthName(_currentMonth),
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context)),
                     ),
                   ),
                   GestureDetector(
                     onTap: _nextMonth,
                     child: Container(
                       width: 40, height: 40,
-                      decoration: BoxDecoration(color: AppTheme.surface, borderRadius: BorderRadius.circular(AppTheme.radius)),
-                      child: const Icon(Icons.chevron_right, size: 20, color: AppTheme.textSecondary),
+                      decoration: BoxDecoration(color: AppTheme.surface(context), borderRadius: BorderRadius.circular(AppTheme.radius)),
+                      child: Icon(Icons.chevron_right, size: 20, color: AppTheme.textSecondary(context)),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -102,8 +102,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(color: AppTheme.surface, borderRadius: BorderRadius.circular(AppTheme.radius)),
-                      child: const Text('Today', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textSecondary)),
+                      decoration: BoxDecoration(color: AppTheme.surface(context), borderRadius: BorderRadius.circular(AppTheme.radius)),
+                      child: Text('Today', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textSecondary(context))),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -111,7 +111,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   Container(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(AppTheme.radius),
-                      border: Border.all(color: AppTheme.border),
+                      border: Border.all(color: AppTheme.borderColor(context)),
                     ),
                     child: Row(
                       children: [
@@ -172,10 +172,10 @@ class _ViewToggle extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: active ? AppTheme.brand : AppTheme.surface,
+          color: active ? AppTheme.brand : AppTheme.surface(context),
           borderRadius: BorderRadius.circular(AppTheme.radius - 1),
         ),
-        child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: active ? Colors.white : AppTheme.textSecondary)),
+        child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: active ? Colors.white : AppTheme.textSecondary(context))),
       ),
     );
   }
@@ -230,7 +230,7 @@ class _MonthView extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: Row(
               children: ['M','T','W','T','F','S','S'].map((d) =>
-                Expanded(child: Center(child: Text(d, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppTheme.textMuted)))),
+                Expanded(child: Center(child: Text(d, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppTheme.textMuted(context))))),
               ).toList(),
             ),
           ),
@@ -280,7 +280,7 @@ class _MonthView extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: isToday || isSelected ? FontWeight.w600 : FontWeight.w400,
-                                color: isToday ? Colors.white : AppTheme.textPrimary,
+                                color: isToday ? Colors.white : AppTheme.textPrimary(context),
                               ),
                             ),
                           ),
@@ -317,10 +317,10 @@ class _MonthView extends StatelessWidget {
             Expanded(
               child: Container(
                 margin: const EdgeInsets.only(top: 8),
-                decoration: const BoxDecoration(
-                  color: AppTheme.surface,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                  border: Border(top: BorderSide(color: AppTheme.border)),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface(context),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                  border: Border(top: BorderSide(color: AppTheme.borderColor(context))),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -331,16 +331,16 @@ class _MonthView extends StatelessWidget {
                         children: [
                           Text(
                             _formatSelectedDate(selectedDate!),
-                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary(context)),
                           ),
                           const Spacer(),
-                          Text('${selectedDayEvents.length} events', style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                          Text('${selectedDayEvents.length} events', style: TextStyle(fontSize: 12, color: AppTheme.textMuted(context))),
                         ],
                       ),
                     ),
                     Expanded(
                       child: selectedDayEvents.isEmpty
-                          ? const Center(child: Text('No events', style: TextStyle(fontSize: 13, color: AppTheme.textMuted)))
+                          ? Center(child: Text('No events', style: TextStyle(fontSize: 13, color: AppTheme.textMuted(context))))
                           : ListView.separated(
                               padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                               itemCount: selectedDayEvents.length,
@@ -359,9 +359,9 @@ class _MonthView extends StatelessWidget {
               ),
             )
           else
-            const Expanded(
+            Expanded(
               child: Center(
-                child: Text('Tap a day to see events', style: TextStyle(fontSize: 13, color: AppTheme.textMuted)),
+                child: Text('Tap a day to see events', style: TextStyle(fontSize: 13, color: AppTheme.textMuted(context))),
               ),
             ),
         ],
@@ -389,11 +389,11 @@ class _AgendaView extends StatelessWidget {
           children: [
             Container(
               width: 56, height: 56,
-              decoration: const BoxDecoration(color: AppTheme.surface, shape: BoxShape.circle),
-              child: const Icon(Icons.calendar_today_rounded, color: AppTheme.textMuted, size: 28),
+              decoration: BoxDecoration(color: AppTheme.surface(context), shape: BoxShape.circle),
+              child: Icon(Icons.calendar_today_rounded, color: AppTheme.textMuted(context), size: 28),
             ),
             const SizedBox(height: 12),
-            const Text('No events this month', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textSecondary)),
+            Text('No events this month', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textSecondary(context))),
           ],
         ),
       );
@@ -432,7 +432,7 @@ class _AgendaView extends StatelessWidget {
                     ),
                   Text(
                     isToday ? 'Today · ${_formatAgendaDate(date)}' : _formatAgendaDate(date),
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isToday ? AppTheme.brand : AppTheme.textSecondary),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isToday ? AppTheme.brand : AppTheme.textSecondary(context)),
                   ),
                 ],
               ),

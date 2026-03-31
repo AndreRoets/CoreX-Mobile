@@ -44,7 +44,7 @@ class EventCard extends StatelessWidget {
         ),
       ),
       child: Material(
-        color: AppTheme.surface,
+        color: AppTheme.surface(context),
         borderRadius: BorderRadius.circular(AppTheme.radius),
         child: InkWell(
           onTap: onTap,
@@ -53,7 +53,7 @@ class EventCard extends StatelessWidget {
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(AppTheme.radius),
-              border: Border.all(color: AppTheme.border),
+              border: Border.all(color: AppTheme.borderColor(context)),
             ),
             child: Row(
               children: [
@@ -91,10 +91,10 @@ class EventCard extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 4),
-                      Text(event.title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text(event.title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textPrimary(context)), maxLines: 1, overflow: TextOverflow.ellipsis),
                       if (event.propertyAddress != null) ...[
                         const SizedBox(height: 2),
-                        Text(event.propertyAddress!, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        Text(event.propertyAddress!, style: TextStyle(fontSize: 12, color: AppTheme.textSecondary(context)), maxLines: 1, overflow: TextOverflow.ellipsis),
                       ],
                     ],
                   ),

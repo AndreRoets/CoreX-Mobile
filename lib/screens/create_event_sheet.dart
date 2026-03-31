@@ -35,7 +35,7 @@ class _CreateEventSheetState extends State<CreateEventSheet> {
       firstDate: DateTime.now().subtract(const Duration(days: 1)),
       lastDate: DateTime.now().add(const Duration(days: 365)),
       builder: (context, child) => Theme(
-        data: ThemeData.dark().copyWith(colorScheme: const ColorScheme.dark(primary: AppTheme.brand, surface: AppTheme.surface)),
+        data: ThemeData.dark().copyWith(colorScheme: ColorScheme.dark(primary: AppTheme.brand, surface: AppTheme.surface(context))),
         child: child!,
       ),
     );
@@ -47,7 +47,7 @@ class _CreateEventSheetState extends State<CreateEventSheet> {
       context: context,
       initialTime: _eventTime ?? TimeOfDay.now(),
       builder: (context, child) => Theme(
-        data: ThemeData.dark().copyWith(colorScheme: const ColorScheme.dark(primary: AppTheme.brand, surface: AppTheme.surface)),
+        data: ThemeData.dark().copyWith(colorScheme: ColorScheme.dark(primary: AppTheme.brand, surface: AppTheme.surface(context))),
         child: child!,
       ),
     );
@@ -87,27 +87,27 @@ class _CreateEventSheetState extends State<CreateEventSheet> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      decoration: BoxDecoration(
+        color: AppTheme.surface(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
       ),
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).viewPadding.bottom),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(top: 12, bottom: 8), decoration: BoxDecoration(color: AppTheme.textMuted, borderRadius: BorderRadius.circular(2)))),
+            Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(top: 12, bottom: 8), decoration: BoxDecoration(color: AppTheme.textMuted(context), borderRadius: BorderRadius.circular(2)))),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 12, 12),
               child: Row(
                 children: [
-                  const Text('New Event', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+                  Text('New Event', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.textPrimary(context))),
                   const Spacer(),
-                  IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close, size: 20, color: AppTheme.textSecondary)),
+                  IconButton(onPressed: () => Navigator.pop(context), icon: Icon(Icons.close, size: 20, color: AppTheme.textSecondary(context))),
                 ],
               ),
             ),
-            const Divider(height: 1, color: AppTheme.border),
+            Divider(height: 1, color: AppTheme.borderColor(context)),
 
             Padding(
               padding: const EdgeInsets.all(20),
@@ -118,7 +118,7 @@ class _CreateEventSheetState extends State<CreateEventSheet> {
                   TextField(
                     controller: _titleController,
                     autofocus: true,
-                    style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary),
+                    style: TextStyle(fontSize: 14, color: AppTheme.textPrimary(context)),
                     decoration: _inputDecoration('Event title'),
                   ),
                   const SizedBox(height: 16),
@@ -130,17 +130,17 @@ class _CreateEventSheetState extends State<CreateEventSheet> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Date', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textSecondary)),
+                            Text('Date', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textSecondary(context))),
                             const SizedBox(height: 8),
                             GestureDetector(
                               onTap: _pickDate,
                               child: Container(
                                 width: double.infinity,
                                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                                decoration: BoxDecoration(color: AppTheme.surface2, borderRadius: BorderRadius.circular(AppTheme.radius), border: Border.all(color: AppTheme.border)),
+                                decoration: BoxDecoration(color: AppTheme.surface2(context), borderRadius: BorderRadius.circular(AppTheme.radius), border: Border.all(color: AppTheme.borderColor(context))),
                                 child: Text(
                                   _eventDate != null ? '${_eventDate!.day}/${_eventDate!.month}/${_eventDate!.year}' : 'Select',
-                                  style: TextStyle(fontSize: 14, color: _eventDate != null ? AppTheme.textPrimary : AppTheme.textMuted),
+                                  style: TextStyle(fontSize: 14, color: _eventDate != null ? AppTheme.textPrimary(context) : AppTheme.textMuted(context)),
                                 ),
                               ),
                             ),
@@ -153,17 +153,17 @@ class _CreateEventSheetState extends State<CreateEventSheet> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Time', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textSecondary)),
+                              Text('Time', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textSecondary(context))),
                               const SizedBox(height: 8),
                               GestureDetector(
                                 onTap: _pickTime,
                                 child: Container(
                                   width: double.infinity,
                                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                                  decoration: BoxDecoration(color: AppTheme.surface2, borderRadius: BorderRadius.circular(AppTheme.radius), border: Border.all(color: AppTheme.border)),
+                                  decoration: BoxDecoration(color: AppTheme.surface2(context), borderRadius: BorderRadius.circular(AppTheme.radius), border: Border.all(color: AppTheme.borderColor(context))),
                                   child: Text(
                                     _eventTime != null ? '${_eventTime!.hour.toString().padLeft(2, '0')}:${_eventTime!.minute.toString().padLeft(2, '0')}' : 'Select',
-                                    style: TextStyle(fontSize: 14, color: _eventTime != null ? AppTheme.textPrimary : AppTheme.textMuted),
+                                    style: TextStyle(fontSize: 14, color: _eventTime != null ? AppTheme.textPrimary(context) : AppTheme.textMuted(context)),
                                   ),
                                 ),
                               ),
@@ -176,14 +176,14 @@ class _CreateEventSheetState extends State<CreateEventSheet> {
                   const SizedBox(height: 16),
 
                   // Type
-                  const Text('Type', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textSecondary)),
+                  Text('Type', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textSecondary(context))),
                   const SizedBox(height: 8),
                   Container(
-                    decoration: BoxDecoration(color: AppTheme.surface2, borderRadius: BorderRadius.circular(AppTheme.radius), border: Border.all(color: AppTheme.border)),
+                    decoration: BoxDecoration(color: AppTheme.surface2(context), borderRadius: BorderRadius.circular(AppTheme.radius), border: Border.all(color: AppTheme.borderColor(context))),
                     child: DropdownButtonFormField<String>(
                       initialValue: _eventType,
-                      dropdownColor: AppTheme.surface2,
-                      style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary),
+                      dropdownColor: AppTheme.surface2(context),
+                      style: TextStyle(fontSize: 14, color: AppTheme.textPrimary(context)),
                       decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.symmetric(horizontal: 16)),
                       items: const [
                         DropdownMenuItem(value: 'manual', child: Text('Manual')),
@@ -198,7 +198,7 @@ class _CreateEventSheetState extends State<CreateEventSheet> {
                   const SizedBox(height: 16),
 
                   // Priority
-                  const Text('Priority', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textSecondary)),
+                  Text('Priority', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textSecondary(context))),
                   const SizedBox(height: 8),
                   _PriorityPills(selected: _priority, onChanged: (v) => setState(() => _priority = v)),
                   const SizedBox(height: 16),
@@ -206,13 +206,13 @@ class _CreateEventSheetState extends State<CreateEventSheet> {
                   // Toggles
                   Row(
                     children: [
-                      const Expanded(child: Text('All day', style: TextStyle(fontSize: 14, color: AppTheme.textSecondary))),
+                      Expanded(child: Text('All day', style: TextStyle(fontSize: 14, color: AppTheme.textSecondary(context)))),
                       Switch.adaptive(value: _allDay, onChanged: (v) => setState(() => _allDay = v), activeTrackColor: AppTheme.brand),
                     ],
                   ),
                   Row(
                     children: [
-                      const Expanded(child: Text('Send reminder', style: TextStyle(fontSize: 14, color: AppTheme.textSecondary))),
+                      Expanded(child: Text('Send reminder', style: TextStyle(fontSize: 14, color: AppTheme.textSecondary(context)))),
                       Switch.adaptive(value: _sendReminder, onChanged: (v) => setState(() => _sendReminder = v), activeTrackColor: AppTheme.brand),
                     ],
                   ),
@@ -222,7 +222,7 @@ class _CreateEventSheetState extends State<CreateEventSheet> {
                   TextField(
                     controller: _descriptionController,
                     maxLines: 2,
-                    style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary),
+                    style: TextStyle(fontSize: 14, color: AppTheme.textPrimary(context)),
                     decoration: _inputDecoration('Description (optional)'),
                   ),
                   const SizedBox(height: 20),
@@ -251,7 +251,7 @@ class _CreateEventSheetState extends State<CreateEventSheet> {
     return InputDecoration(
       hintText: hint,
       filled: true,
-      fillColor: AppTheme.surface2,
+      fillColor: AppTheme.surface2(context),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radius), borderSide: BorderSide.none),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     );
@@ -284,12 +284,12 @@ class _PriorityPills extends StatelessWidget {
               margin: EdgeInsets.only(right: opt != _options.last ? 8 : 0),
               padding: const EdgeInsets.symmetric(vertical: 12),
               decoration: BoxDecoration(
-                color: isActive ? color.withValues(alpha: 0.15) : AppTheme.surface2,
+                color: isActive ? color.withValues(alpha: 0.15) : AppTheme.surface2(context),
                 borderRadius: BorderRadius.circular(AppTheme.radius),
                 border: isActive ? Border.all(color: color.withValues(alpha: 0.4)) : null,
               ),
               child: Center(
-                child: Text(opt['label'] as String, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: isActive ? color : AppTheme.textSecondary)),
+                child: Text(opt['label'] as String, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: isActive ? color : AppTheme.textSecondary(context))),
               ),
             ),
           ),

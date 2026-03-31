@@ -54,18 +54,18 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     'Home Finders Coastal',
                     style: TextStyle(
                       fontSize: 14,
-                      color: AppTheme.textSecondary,
+                      color: AppTheme.textSecondary(context),
                     ),
                   ),
                   const SizedBox(height: 48),
                   TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
-                    style: const TextStyle(color: AppTheme.textPrimary),
+                    style: TextStyle(color: AppTheme.textPrimary(context)),
                     decoration: const InputDecoration(hintText: 'Email'),
                     validator: (v) =>
                         v == null || v.isEmpty ? 'Enter your email' : null,
@@ -74,7 +74,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextFormField(
                     controller: _passwordController,
                     obscureText: true,
-                    style: const TextStyle(color: AppTheme.textPrimary),
+                    style: TextStyle(color: AppTheme.textPrimary(context)),
                     decoration: const InputDecoration(hintText: 'Password'),
                     validator: (v) =>
                         v == null || v.isEmpty ? 'Enter your password' : null,

@@ -46,11 +46,11 @@ class _TasksScreenState extends State<TasksScreen> {
     final filtered = _filteredTasks(allTasks);
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: AppTheme.background(context),
       body: SafeArea(
         child: RefreshIndicator(
           color: AppTheme.brand,
-          backgroundColor: AppTheme.surface,
+          backgroundColor: AppTheme.surface(context),
           onRefresh: () => context.read<DashboardProvider>().loadTasks(),
           child: CustomScrollView(
             slivers: [
@@ -61,13 +61,13 @@ class _TasksScreenState extends State<TasksScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Tasks', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+                      Text('Tasks', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context))),
                       const SizedBox(height: 2),
                       Text(
                         '${dash.data.taskSummary.open} open · ${dash.data.taskSummary.overdue} overdue',
                         style: TextStyle(
                           fontSize: 12,
-                          color: dash.data.taskSummary.overdue > 0 ? const Color(0xFFef4444) : AppTheme.textMuted,
+                          color: dash.data.taskSummary.overdue > 0 ? const Color(0xFFef4444) : AppTheme.textMuted(context),
                         ),
                       ),
                     ],
@@ -96,9 +96,9 @@ class _TasksScreenState extends State<TasksScreen> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                             decoration: BoxDecoration(
-                              color: isActive ? color.withValues(alpha: 0.15) : AppTheme.surface,
+                              color: isActive ? color.withValues(alpha: 0.15) : AppTheme.surface(context),
                               borderRadius: BorderRadius.circular(AppTheme.radius),
-                              border: Border.all(color: isActive ? color.withValues(alpha: 0.4) : AppTheme.border),
+                              border: Border.all(color: isActive ? color.withValues(alpha: 0.4) : AppTheme.borderColor(context)),
                             ),
                             alignment: Alignment.center,
                             child: Row(
@@ -112,7 +112,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w500,
-                                    color: isActive ? color : AppTheme.textSecondary,
+                                    color: isActive ? color : AppTheme.textSecondary(context),
                                   ),
                                 ),
                               ],
@@ -134,11 +134,11 @@ class _TasksScreenState extends State<TasksScreen> {
                       children: [
                         Container(
                           width: 56, height: 56,
-                          decoration: const BoxDecoration(color: AppTheme.surface, shape: BoxShape.circle),
-                          child: const Icon(Icons.checklist_rounded, color: AppTheme.textMuted, size: 28),
+                          decoration: BoxDecoration(color: AppTheme.surface(context), shape: BoxShape.circle),
+                          child: Icon(Icons.checklist_rounded, color: AppTheme.textMuted(context), size: 28),
                         ),
                         const SizedBox(height: 12),
-                        const Text('No tasks', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textSecondary)),
+                        Text('No tasks', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textSecondary(context))),
                       ],
                     ),
                   ),
@@ -182,29 +182,29 @@ class _TasksScreenState extends State<TasksScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: AppTheme.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        decoration: BoxDecoration(
+          color: AppTheme.surface(context),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
         ),
         padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewPadding.bottom),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(top: 12, bottom: 16), decoration: BoxDecoration(color: AppTheme.textMuted, borderRadius: BorderRadius.circular(2)))),
+            Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(top: 12, bottom: 16), decoration: BoxDecoration(color: AppTheme.textMuted(context), borderRadius: BorderRadius.circular(2)))),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Text(task.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+              child: Text(task.title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.textPrimary(context))),
             ),
             if (task.propertyAddress != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-                child: Text(task.propertyAddress!, style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+                child: Text(task.propertyAddress!, style: TextStyle(fontSize: 13, color: AppTheme.textSecondary(context))),
               ),
             if (task.description != null && task.description!.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                child: Text(task.description!, style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+                child: Text(task.description!, style: TextStyle(fontSize: 13, color: AppTheme.textSecondary(context))),
               ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),

@@ -68,17 +68,17 @@ class _OverdueReviewScreenState extends State<OverdueReviewScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF050505),
       appBar: AppBar(
-        backgroundColor: AppTheme.surface,
+        backgroundColor: AppTheme.surface(context),
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.close, color: AppTheme.textSecondary),
+          icon: Icon(Icons.close, color: AppTheme.textSecondary(context)),
           onPressed: () => Navigator.pop(context),
         ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Overdue Review', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
-            Text('$_resolvedCount of ${_items.length} resolved', style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+            Text('Overdue Review', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.textPrimary(context))),
+            Text('$_resolvedCount of ${_items.length} resolved', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary(context))),
           ],
         ),
       ),
@@ -87,7 +87,7 @@ class _OverdueReviewScreenState extends State<OverdueReviewScreen> {
           // Progress bar
           Container(
             height: 3,
-            color: AppTheme.surface2,
+            color: AppTheme.surface2(context),
             child: Align(
               alignment: Alignment.centerLeft,
               child: AnimatedFractionallySizedBox(
@@ -119,19 +119,19 @@ class _OverdueReviewScreenState extends State<OverdueReviewScreen> {
           if (!allResolved && _items.isNotEmpty)
             Container(
               padding: EdgeInsets.fromLTRB(20, 12, 20, 12 + MediaQuery.of(context).viewPadding.bottom),
-              decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppTheme.border))),
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: AppTheme.borderColor(context)))),
               child: Row(
                 children: [
                   GestureDetector(
                     onTap: _currentIndex > 0 ? () => setState(() { _currentIndex--; _showExtend = false; }) : null,
-                    child: Text('← Previous', style: TextStyle(fontSize: 13, color: _currentIndex > 0 ? AppTheme.textSecondary : AppTheme.textMuted)),
+                    child: Text('← Previous', style: TextStyle(fontSize: 13, color: _currentIndex > 0 ? AppTheme.textSecondary(context) : AppTheme.textMuted(context))),
                   ),
                   const Spacer(),
-                  Text('${_currentIndex + 1} / ${_items.length}', style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                  Text('${_currentIndex + 1} / ${_items.length}', style: TextStyle(fontSize: 12, color: AppTheme.textMuted(context))),
                   const Spacer(),
                   GestureDetector(
                     onTap: _currentIndex < _items.length - 1 ? () => setState(() { _currentIndex++; _showExtend = false; }) : null,
-                    child: Text('Next →', style: TextStyle(fontSize: 13, color: _currentIndex < _items.length - 1 ? AppTheme.textSecondary : AppTheme.textMuted)),
+                    child: Text('Next →', style: TextStyle(fontSize: 13, color: _currentIndex < _items.length - 1 ? AppTheme.textSecondary(context) : AppTheme.textMuted(context))),
                   ),
                 ],
               ),
@@ -154,9 +154,9 @@ class _OverdueReviewScreenState extends State<OverdueReviewScreen> {
         // Item card
         Container(
           decoration: BoxDecoration(
-            color: AppTheme.surface,
+            color: AppTheme.surface(context),
             borderRadius: BorderRadius.circular(AppTheme.radius),
-            border: Border.all(color: AppTheme.border),
+            border: Border.all(color: AppTheme.borderColor(context)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -169,7 +169,7 @@ class _OverdueReviewScreenState extends State<OverdueReviewScreen> {
                   children: [
                     Row(
                       children: [
-                        Expanded(child: Text(item.title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textPrimary))),
+                        Expanded(child: Text(item.title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textPrimary(context)))),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(color: colour.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(4)),
@@ -181,9 +181,9 @@ class _OverdueReviewScreenState extends State<OverdueReviewScreen> {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          const Icon(Icons.location_on_outlined, size: 14, color: AppTheme.textSecondary),
+                          Icon(Icons.location_on_outlined, size: 14, color: AppTheme.textSecondary(context)),
                           const SizedBox(width: 4),
-                          Expanded(child: Text(item.address!, style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary))),
+                          Expanded(child: Text(item.address!, style: TextStyle(fontSize: 13, color: AppTheme.textSecondary(context)))),
                         ],
                       ),
                     ],
@@ -219,23 +219,23 @@ class _OverdueReviewScreenState extends State<OverdueReviewScreen> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: AppTheme.surface,
+              color: AppTheme.surface(context),
               borderRadius: BorderRadius.circular(AppTheme.radius),
-              border: Border.all(color: AppTheme.border),
+              border: Border.all(color: AppTheme.borderColor(context)),
             ),
             child: Row(
               children: [
-                const Text('Days:', style: TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+                Text('Days:', style: TextStyle(fontSize: 13, color: AppTheme.textSecondary(context))),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(color: AppTheme.surface2, borderRadius: BorderRadius.circular(AppTheme.radius)),
+                    decoration: BoxDecoration(color: AppTheme.surface2(context), borderRadius: BorderRadius.circular(AppTheme.radius)),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<int>(
                         value: _extendDays,
-                        dropdownColor: AppTheme.surface2,
-                        style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary),
+                        dropdownColor: AppTheme.surface2(context),
+                        style: TextStyle(fontSize: 14, color: AppTheme.textPrimary(context)),
                         items: [1, 2, 3, 5, 7, 14].map((d) => DropdownMenuItem(value: d, child: Text(d == 7 ? '1 week' : d == 14 ? '2 weeks' : '$d day${d > 1 ? 's' : ''}'))).toList(),
                         onChanged: (v) => setState(() => _extendDays = v ?? 3),
                       ),
@@ -334,7 +334,7 @@ class _AllResolvedView extends StatelessWidget {
             child: const Icon(Icons.check, size: 32, color: Color(0xFF22c55e)),
           ),
           const SizedBox(height: 16),
-          const Text('All caught up!', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: AppTheme.textPrimary)),
+          Text('All caught up!', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: AppTheme.textPrimary(context))),
           const SizedBox(height: 20),
           GestureDetector(
             onTap: onContinue,
