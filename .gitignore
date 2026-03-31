@@ -35,7 +35,8 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
-pubspec.lock
+# pubspec.lock is committed for apps (uncomment for packages)
+# pubspec.lock
 
 # Symbolication related
 app.*.symbols
