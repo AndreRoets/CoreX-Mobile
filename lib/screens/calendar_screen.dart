@@ -7,7 +7,8 @@ import '../widgets/event_card.dart';
 import 'create_event_sheet.dart';
 
 class CalendarScreen extends StatefulWidget {
-  const CalendarScreen({super.key});
+  final bool embedded;
+  const CalendarScreen({super.key, this.embedded = false});
 
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
@@ -48,108 +49,119 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _loadEvents();
   }
 
+  Widget _buildBody(BuildContext context, List<CalendarEvent> events) {
+    return Column(
+        children: [
+          // Sticky header
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: BoxDecoration(
+              color: AppTheme.background(context),
+              border: Border(bottom: BorderSide(color: AppTheme.borderColor(context))),
+            ),
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: _previousMonth,
+                  child: Container(
+                    width: 40, height: 40,
+                    decoration: BoxDecoration(color: AppTheme.surface(context), borderRadius: BorderRadius.circular(AppTheme.radius)),
+                    child: Icon(Icons.chevron_left, size: 20, color: AppTheme.textSecondary(context)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _monthName(_currentMonth),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context)),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: _nextMonth,
+                  child: Container(
+                    width: 40, height: 40,
+                    decoration: BoxDecoration(color: AppTheme.surface(context), borderRadius: BorderRadius.circular(AppTheme.radius)),
+                    child: Icon(Icons.chevron_right, size: 20, color: AppTheme.textSecondary(context)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _currentMonth = DateTime(DateTime.now().year, DateTime.now().month);
+                      _selectedDate = DateTime.now();
+                    });
+                    _loadEvents();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(color: AppTheme.surface(context), borderRadius: BorderRadius.circular(AppTheme.radius)),
+                    child: Text('Today', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textSecondary(context))),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(AppTheme.radius),
+                    border: Border.all(color: AppTheme.borderColor(context)),
+                  ),
+                  child: Row(
+                    children: [
+                      _ViewToggle(label: 'Month', active: !_isAgendaView, onTap: () => setState(() => _isAgendaView = false)),
+                      _ViewToggle(label: 'Agenda', active: _isAgendaView, onTap: () => setState(() => _isAgendaView = true)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _isAgendaView
+                ? _AgendaView(events: events)
+                : _MonthView(
+                    currentMonth: _currentMonth,
+                    events: events,
+                    selectedDate: _selectedDate,
+                    onDateSelected: (date) => setState(() => _selectedDate = date),
+                    onSwipeLeft: _nextMonth,
+                    onSwipeRight: _previousMonth,
+                  ),
+          ),
+        ],
+    );
+  }
+
+  Widget _buildFab(BuildContext context) {
+    return FloatingActionButton(
+      heroTag: 'calendar_fab',
+      onPressed: () => showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => const CreateEventSheet(),
+      ),
+      backgroundColor: AppTheme.brand,
+      child: const Icon(Icons.add, color: Colors.white),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final events = context.watch<DashboardProvider>().events;
 
+    if (widget.embedded) {
+      return Stack(
+        children: [
+          _buildBody(context, events),
+          Positioned(right: 16, bottom: 16, child: _buildFab(context)),
+        ],
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppTheme.background(context),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Sticky header
-            Container(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-              decoration: BoxDecoration(
-                color: AppTheme.background(context),
-                border: Border(bottom: BorderSide(color: AppTheme.borderColor(context))),
-              ),
-              child: Row(
-                children: [
-                  // Month nav
-                  GestureDetector(
-                    onTap: _previousMonth,
-                    child: Container(
-                      width: 40, height: 40,
-                      decoration: BoxDecoration(color: AppTheme.surface(context), borderRadius: BorderRadius.circular(AppTheme.radius)),
-                      child: Icon(Icons.chevron_left, size: 20, color: AppTheme.textSecondary(context)),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      _monthName(_currentMonth),
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context)),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: _nextMonth,
-                    child: Container(
-                      width: 40, height: 40,
-                      decoration: BoxDecoration(color: AppTheme.surface(context), borderRadius: BorderRadius.circular(AppTheme.radius)),
-                      child: Icon(Icons.chevron_right, size: 20, color: AppTheme.textSecondary(context)),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Today
-                  GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _currentMonth = DateTime(DateTime.now().year, DateTime.now().month);
-                        _selectedDate = DateTime.now();
-                      });
-                      _loadEvents();
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(color: AppTheme.surface(context), borderRadius: BorderRadius.circular(AppTheme.radius)),
-                      child: Text('Today', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textSecondary(context))),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // View toggle
-                  Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(AppTheme.radius),
-                      border: Border.all(color: AppTheme.borderColor(context)),
-                    ),
-                    child: Row(
-                      children: [
-                        _ViewToggle(label: 'Month', active: !_isAgendaView, onTap: () => setState(() => _isAgendaView = false)),
-                        _ViewToggle(label: 'Agenda', active: _isAgendaView, onTap: () => setState(() => _isAgendaView = true)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Content
-            Expanded(
-              child: _isAgendaView
-                  ? _AgendaView(events: events)
-                  : _MonthView(
-                      currentMonth: _currentMonth,
-                      events: events,
-                      selectedDate: _selectedDate,
-                      onDateSelected: (date) => setState(() => _selectedDate = date),
-                      onSwipeLeft: _nextMonth,
-                      onSwipeRight: _previousMonth,
-                    ),
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: Colors.transparent,
-          builder: (_) => const CreateEventSheet(),
-        ),
-        backgroundColor: AppTheme.brand,
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
+      body: _buildBody(context, events),
+      floatingActionButton: _buildFab(context),
     );
   }
 

@@ -9,6 +9,8 @@ import '../widgets/task_card.dart';
 import '../widgets/score_circle.dart';
 import 'create_event_sheet.dart';
 import 'overdue_review_screen.dart';
+import 'calendar_screen.dart';
+import 'tasks_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -18,6 +20,8 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  int _currentIndex = 0;
+
   @override
   void initState() {
     super.initState();
@@ -28,18 +32,56 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final dash = context.watch<DashboardProvider>();
-    final data = dash.data;
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dashboard'),
+        title: Text(const ['Dashboard', 'Calendar', 'Tasks'][_currentIndex]),
         leading: IconButton(
           icon: Icon(Icons.arrow_back_rounded, color: AppTheme.textPrimary(context)),
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: RefreshIndicator(
+      body: IndexedStack(
+        index: _currentIndex,
+        children: const [
+          _DashboardTab(),
+          CalendarScreen(embedded: true),
+          TasksScreen(embedded: true),
+        ],
+      ),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: AppTheme.borderColor(context))),
+        ),
+        child: BottomNavigationBar(
+          currentIndex: _currentIndex,
+          onTap: (i) => setState(() => _currentIndex = i),
+          backgroundColor: AppTheme.surface(context),
+          selectedItemColor: AppTheme.brand,
+          unselectedItemColor: AppTheme.textMuted(context),
+          type: BottomNavigationBarType.fixed,
+          selectedFontSize: 11,
+          unselectedFontSize: 11,
+          items: const [
+            BottomNavigationBarItem(icon: Icon(Icons.dashboard_rounded), label: 'Dashboard'),
+            BottomNavigationBarItem(icon: Icon(Icons.calendar_month_rounded), label: 'Calendar'),
+            BottomNavigationBarItem(icon: Icon(Icons.checklist_rounded), label: 'Tasks'),
+          ],
+        ),
+      ),
+    );
+  }
+
+}
+
+class _DashboardTab extends StatelessWidget {
+  const _DashboardTab();
+
+  @override
+  Widget build(BuildContext context) {
+    final dash = context.watch<DashboardProvider>();
+    final data = dash.data;
+
+    return RefreshIndicator(
         color: AppTheme.brand,
         backgroundColor: AppTheme.surface(context),
         onRefresh: () => context.read<DashboardProvider>().loadDashboard(),
@@ -330,7 +372,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SliverToBoxAdapter(child: SizedBox(height: 100)),
           ],
         ),
-      ),
     );
   }
 
