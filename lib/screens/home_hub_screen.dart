@@ -6,6 +6,7 @@ import '../widgets/greeting_card.dart';
 import '../widgets/feature_square.dart';
 import '../widgets/collapse_menu.dart';
 import 'dashboard_screen.dart';
+import 'properties/property_list_screen.dart';
 
 class HomeHubScreen extends StatelessWidget {
   const HomeHubScreen({super.key});
@@ -63,9 +64,17 @@ class HomeHubScreen extends StatelessWidget {
                             );
                           },
                         ),
-                        // Future feature squares go here
-                        // FeatureSquare(icon: Icons.calendar_month_rounded, label: 'Calendar', onTap: () {}),
-                        // FeatureSquare(icon: Icons.checklist_rounded, label: 'Tasks', onTap: () {}),
+                        FeatureSquare(
+                          icon: Icons.home_work_rounded,
+                          label: 'Properties',
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const PropertyListScreen(),
+                              ),
+                            );
+                          },
+                        ),
                       ],
                     ),
                   ],

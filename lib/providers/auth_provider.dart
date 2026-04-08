@@ -18,11 +18,15 @@ class AuthProvider extends ChangeNotifier {
   Future<void> checkAuth() async {
     final token = await _api.getToken();
     if (token != null) {
-      _isLoggedIn = true;
-      // Load profile on auto-login
       try {
         _user = await _api.getProfile();
-      } catch (_) {}
+        _isLoggedIn = true;
+      } catch (_) {
+        // Token is invalid or expired — clear it and require login
+        await _api.clearToken();
+        _isLoggedIn = false;
+        _user = null;
+      }
       notifyListeners();
     }
   }

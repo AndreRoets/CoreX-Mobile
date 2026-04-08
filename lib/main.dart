@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'theme.dart';
 import 'providers/auth_provider.dart';
 import 'providers/dashboard_provider.dart';
+import 'providers/property_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_hub_screen.dart';
@@ -23,6 +24,7 @@ class CoreXApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()..checkAuth()),
         ChangeNotifierProvider(create: (_) => DashboardProvider()),
+        ChangeNotifierProvider(create: (_) => PropertyProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
       child: Consumer<ThemeProvider>(

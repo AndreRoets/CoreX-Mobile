@@ -1,12 +1,16 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/env.dart';
 import '../models/dashboard_data.dart';
+import '../models/property.dart';
 
 class ApiService {
   static String get baseUrl => Env.apiBaseUrl;
   static bool get useMockData => Env.useMockData;
+  static const Duration _timeout = Duration(seconds: 15);
 
   static const String _tokenKey = 'auth_token';
 
@@ -55,7 +59,7 @@ class ApiService {
       Uri.parse('$baseUrl/login'),
       headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
       body: jsonEncode({'email': email, 'password': password}),
-    );
+    ).timeout(_timeout);
 
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
@@ -80,7 +84,7 @@ class ApiService {
     final response = await http.get(
       Uri.parse('$baseUrl/profile'),
       headers: await _headers(),
-    );
+    ).timeout(_timeout);
 
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
@@ -96,7 +100,7 @@ class ApiService {
     final response = await http.get(
       Uri.parse('$baseUrl/command-center/dashboard'),
       headers: await _headers(),
-    );
+    ).timeout(_timeout);
 
     if (response.statusCode == 200) {
       return DashboardData.fromJson(jsonDecode(response.body));
@@ -112,7 +116,7 @@ class ApiService {
     final uri = Uri.parse('$baseUrl/command-center/tasks')
         .replace(queryParameters: status != null ? {'status': status} : null);
 
-    final response = await http.get(uri, headers: await _headers());
+    final response = await http.get(uri, headers: await _headers()).timeout(_timeout);
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
@@ -146,7 +150,7 @@ class ApiService {
         if (description != null) 'description': description,
         'send_reminder': sendReminder,
       }),
-    );
+    ).timeout(_timeout);
 
     if (response.statusCode == 200 || response.statusCode == 201) {
       return CommandTask.fromJson(jsonDecode(response.body));
@@ -160,7 +164,7 @@ class ApiService {
     final response = await http.post(
       Uri.parse('$baseUrl/command-center/tasks/$taskId/complete'),
       headers: await _headers(),
-    );
+    ).timeout(_timeout);
 
     if (response.statusCode != 200) {
       throw ApiException(response.statusCode, 'Failed to complete task');
@@ -174,7 +178,7 @@ class ApiService {
       Uri.parse('$baseUrl/command-center/tasks/$taskId/status'),
       headers: await _headers(),
       body: jsonEncode({'status': status}),
-    );
+    ).timeout(_timeout);
 
     if (response.statusCode != 200) {
       throw ApiException(response.statusCode, 'Failed to update task status');
@@ -192,7 +196,7 @@ class ApiService {
         if (extendDays != null) 'extend_days': extendDays,
         if (note != null) 'resolution_note': note,
       }),
-    );
+    ).timeout(_timeout);
 
     if (response.statusCode != 200) {
       throw ApiException(response.statusCode, 'Failed to resolve task');
@@ -207,7 +211,7 @@ class ApiService {
     final uri = Uri.parse('$baseUrl/command-center/calendar/events')
         .replace(queryParameters: month != null ? {'month': month} : null);
 
-    final response = await http.get(uri, headers: await _headers());
+    final response = await http.get(uri, headers: await _headers()).timeout(_timeout);
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
@@ -245,7 +249,7 @@ class ApiService {
         if (description != null) 'description': description,
         'send_reminder': sendReminder,
       }),
-    );
+    ).timeout(_timeout);
 
     if (response.statusCode == 200 || response.statusCode == 201) {
       return CalendarEvent.fromJson(jsonDecode(response.body));
@@ -259,7 +263,7 @@ class ApiService {
     final response = await http.post(
       Uri.parse('$baseUrl/command-center/calendar/$eventId/complete'),
       headers: await _headers(),
-    );
+    ).timeout(_timeout);
 
     if (response.statusCode != 200) {
       throw ApiException(response.statusCode, 'Failed to complete event');
@@ -277,7 +281,7 @@ class ApiService {
         if (extendDays != null) 'extend_days': extendDays,
         if (note != null) 'resolution_note': note,
       }),
-    );
+    ).timeout(_timeout);
 
     if (response.statusCode != 200) {
       throw ApiException(response.statusCode, 'Failed to resolve event');
@@ -286,27 +290,76 @@ class ApiService {
 
   // --- Properties ---
 
-  Future<List<Map<String, dynamic>>> getProperties() async {
-    if (useMockData) {
-      await Future.delayed(const Duration(milliseconds: 600));
-      return [
-        {'id': 1, 'address': '12 Marine Drive, Amanzimtoti', 'price': 1250000, 'status': 'Active'},
-        {'id': 2, 'address': '45 Beach Road, Umkomaas', 'price': 2100000, 'status': 'Pending'},
-        {'id': 3, 'address': '8 Ocean View Crescent, Warner Beach', 'price': 875000, 'status': 'Sold'},
-        {'id': 4, 'address': '23 Kingsway, Scottburgh', 'price': 1650000, 'status': 'Active'},
-      ];
-    }
-
+  Future<List<Property>> getProperties() async {
     final response = await http.get(
-      Uri.parse('$baseUrl/properties'),
+      Uri.parse('$baseUrl/mobile/properties'),
       headers: await _headers(),
-    );
+    ).timeout(_timeout);
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      return List<Map<String, dynamic>>.from(data['data'] ?? data);
+      final list = data['properties'] as List? ?? [];
+      return list.map((e) => Property.fromJson(e)).toList();
     }
     throw ApiException(response.statusCode, 'Failed to load properties');
+  }
+
+  Future<Property> getProperty(int id) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/mobile/properties/$id'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return Property.fromJson(data['property']);
+    }
+    throw ApiException(response.statusCode, 'Failed to load property');
+  }
+
+  Future<Property> createProperty(Map<String, dynamic> data) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/mobile/properties'),
+      headers: await _headers(),
+      body: jsonEncode(data),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final body = jsonDecode(response.body);
+      return Property.fromJson(body['property'] ?? body);
+    }
+    throw ApiException(response.statusCode, 'Failed to create property');
+  }
+
+  Future<Property> updateProperty(int id, Map<String, dynamic> data) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/mobile/properties/$id'),
+      headers: await _headers(),
+      body: jsonEncode(data),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      return Property.fromJson(body['property'] ?? body);
+    }
+    throw ApiException(response.statusCode, 'Failed to update property');
+  }
+
+  Future<void> uploadPropertyImage(int propertyId, File image, String? roomTag) async {
+    final token = await getToken();
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/mobile/properties/$propertyId/images'),
+    );
+    request.headers['Accept'] = 'application/json';
+    if (token != null) request.headers['Authorization'] = 'Bearer $token';
+    request.files.add(await http.MultipartFile.fromPath('image', image.path));
+    if (roomTag != null) request.fields['room_tag'] = roomTag;
+
+    final streamed = await request.send().timeout(_timeout);
+    if (streamed.statusCode != 200 && streamed.statusCode != 201) {
+      throw ApiException(streamed.statusCode, 'Failed to upload image');
+    }
   }
 
   // --- Mock Data ---
