@@ -5,7 +5,10 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/env.dart';
 import '../models/dashboard_data.dart';
+import '../models/gallery_tags.dart';
 import '../models/property.dart';
+import '../models/property_options.dart';
+import '../models/space.dart';
 
 class ApiService {
   static String get baseUrl => Env.apiBaseUrl;
@@ -13,6 +16,9 @@ class ApiService {
   static const Duration _timeout = Duration(seconds: 15);
 
   static const String _tokenKey = 'auth_token';
+  static const String _spacesCatalogKey = 'spaces_catalog_v1';
+  static const String _spacesCatalogTsKey = 'spaces_catalog_v1_ts';
+  static const Duration _spacesCatalogTtl = Duration(hours: 24);
 
   Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
@@ -290,6 +296,31 @@ class ApiService {
 
   // --- Properties ---
 
+  /// Session-scoped in-memory cache for the property options dropdown data.
+  /// Static so every [ApiService] instance shares it; cleared on app
+  /// restart because it's never persisted to disk (per the spec — admins
+  /// edit these on the web and stale cached entries would be confusing).
+  static PropertyOptions? _cachedPropertyOptions;
+
+  Future<PropertyOptions> getPropertyOptions({bool forceRefresh = false}) async {
+    if (!forceRefresh && _cachedPropertyOptions != null) {
+      return _cachedPropertyOptions!;
+    }
+    final response = await http.get(
+      Uri.parse('$baseUrl/mobile/properties/options'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final options =
+          PropertyOptions.fromJson(Map<String, dynamic>.from(data));
+      _cachedPropertyOptions = options;
+      return options;
+    }
+    throw ApiException(response.statusCode, 'Failed to load property options');
+  }
+
   Future<List<Property>> getProperties() async {
     final response = await http.get(
       Uri.parse('$baseUrl/mobile/properties'),
@@ -345,7 +376,133 @@ class ApiService {
     throw ApiException(response.statusCode, 'Failed to update property');
   }
 
-  Future<void> uploadPropertyImage(int propertyId, File image, String? roomTag) async {
+  // --- Spaces & Features ---
+
+  Future<SpacesCatalog> getSpacesCatalog({bool forceRefresh = false}) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    if (!forceRefresh) {
+      final cached = prefs.getString(_spacesCatalogKey);
+      final ts = prefs.getInt(_spacesCatalogTsKey);
+      if (cached != null && ts != null) {
+        final age = DateTime.now().millisecondsSinceEpoch - ts;
+        if (age < _spacesCatalogTtl.inMilliseconds) {
+          try {
+            return SpacesCatalog.fromJson(
+                Map<String, dynamic>.from(jsonDecode(cached)));
+          } catch (_) {
+            // fall through to network
+          }
+        }
+      }
+    }
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/mobile/properties/spaces/catalog'),
+        headers: await _headers(),
+      ).timeout(_timeout);
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        final map = decoded is Map<String, dynamic>
+            ? decoded
+            : <String, dynamic>{};
+        await prefs.setString(_spacesCatalogKey, jsonEncode(map));
+        await prefs.setInt(
+            _spacesCatalogTsKey, DateTime.now().millisecondsSinceEpoch);
+        return SpacesCatalog.fromJson(map);
+      }
+      throw ApiException(response.statusCode, 'Failed to load spaces catalog');
+    } on SocketException {
+      // offline — fall back to stale cache if we have one
+      final cached = prefs.getString(_spacesCatalogKey);
+      if (cached != null) {
+        return SpacesCatalog.fromJson(
+            Map<String, dynamic>.from(jsonDecode(cached)));
+      }
+      rethrow;
+    }
+  }
+
+  Future<PropertySpacesData> getPropertySpaces(int id) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/mobile/properties/$id/spaces'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return PropertySpacesData.fromJson(Map<String, dynamic>.from(data));
+    }
+    throw ApiException(response.statusCode, 'Failed to load property spaces');
+  }
+
+  Future<PropertySpacesData> updatePropertySpaces(
+      int id, Map<String, dynamic> payload) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/mobile/properties/$id/spaces'),
+      headers: await _headers(),
+      body: jsonEncode(payload),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return PropertySpacesData.fromJson(Map<String, dynamic>.from(data));
+    }
+
+    if (response.statusCode == 403) {
+      throw ApiException(
+          403, "You don't have permission to edit this property");
+    }
+
+    if (response.statusCode == 422) {
+      String msg = 'Validation failed';
+      try {
+        final body = jsonDecode(response.body);
+        if (body is Map && body['errors'] is Map) {
+          final errors = body['errors'] as Map;
+          if (errors.isNotEmpty) {
+            final firstKey = errors.keys.first.toString();
+            final firstVal = errors[firstKey];
+            final firstMsg = (firstVal is List && firstVal.isNotEmpty)
+                ? firstVal.first.toString()
+                : firstVal.toString();
+            msg = '$firstKey: $firstMsg';
+          }
+        } else if (body is Map && body['message'] is String) {
+          msg = body['message'] as String;
+        }
+      } catch (_) {}
+      throw ApiException(422, msg);
+    }
+
+    throw ApiException(response.statusCode, 'Failed to save spaces');
+  }
+
+  Future<GalleryTagsData> getGalleryTags(int propertyId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/mobile/properties/$propertyId/gallery/tags'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return GalleryTagsData.fromJson(Map<String, dynamic>.from(data));
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(
+          403, "You don't have permission to view this property");
+    }
+    throw ApiException(response.statusCode, 'Failed to load gallery tags');
+  }
+
+  /// Uploads a single image. Pass [roomTag] `null` to upload untagged.
+  ///
+  /// Throws [TagValidationException] on a 422 response whose body contains
+  /// `available_tags`, so the caller can refresh its local tag list.
+  Future<UploadedImage> uploadPropertyImage(
+      int propertyId, File image, String? roomTag) async {
     final token = await getToken();
     final request = http.MultipartRequest(
       'POST',
@@ -357,9 +514,53 @@ class ApiService {
     if (roomTag != null) request.fields['room_tag'] = roomTag;
 
     final streamed = await request.send().timeout(_timeout);
-    if (streamed.statusCode != 200 && streamed.statusCode != 201) {
-      throw ApiException(streamed.statusCode, 'Failed to upload image');
+    final body = await streamed.stream.bytesToString();
+    final status = streamed.statusCode;
+
+    if (status == 200 || status == 201) {
+      try {
+        final json = jsonDecode(body);
+        if (json is Map) {
+          return UploadedImage(
+            url: json['url']?.toString() ?? '',
+            roomTag: json['room_tag']?.toString(),
+          );
+        }
+      } catch (_) {}
+      return const UploadedImage(url: '');
     }
+
+    if (status == 422) {
+      List<String> available = const [];
+      String message = "Tag is not available on this property";
+      try {
+        final json = jsonDecode(body);
+        if (json is Map) {
+          if (json['available_tags'] is List) {
+            available = (json['available_tags'] as List)
+                .map((e) => e.toString())
+                .toList();
+          }
+          if (json['message'] is String) {
+            message = json['message'] as String;
+          } else if (json['errors'] is Map) {
+            final errors = json['errors'] as Map;
+            if (errors['room_tag'] is List &&
+                (errors['room_tag'] as List).isNotEmpty) {
+              message = (errors['room_tag'] as List).first.toString();
+            }
+          }
+        }
+      } catch (_) {}
+      throw TagValidationException(message, available);
+    }
+
+    if (status == 403) {
+      throw ApiException(
+          403, "You don't have permission to upload to this property");
+    }
+
+    throw ApiException(status, 'Failed to upload image');
   }
 
   // --- Mock Data ---
@@ -447,4 +648,13 @@ class ApiException implements Exception {
 
   @override
   String toString() => 'ApiException($statusCode): $message';
+}
+
+/// Thrown by [ApiService.uploadPropertyImage] when the server rejects a
+/// [roomTag] because it isn't on the property's live tag list. The caller
+/// should use [availableTags] to refresh its local picker and re-prompt.
+class TagValidationException extends ApiException {
+  final List<String> availableTags;
+  TagValidationException(String message, this.availableTags)
+      : super(422, message);
 }

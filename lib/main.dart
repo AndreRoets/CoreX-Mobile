@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'theme.dart';
 import 'providers/auth_provider.dart';
@@ -8,11 +9,20 @@ import 'providers/property_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_hub_screen.dart';
+import 'screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: '.env');
+  await _requestInitialPermissions();
   runApp(const CoreXApp());
+}
+
+Future<void> _requestInitialPermissions() async {
+  final status = await Permission.camera.status;
+  if (!status.isGranted && !status.isPermanentlyDenied) {
+    await Permission.camera.request();
+  }
 }
 
 class CoreXApp extends StatelessWidget {
@@ -35,11 +45,32 @@ class CoreXApp extends StatelessWidget {
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
             themeMode: themeProvider.themeMode,
-            home: const AuthGate(),
+            home: const _AppBootstrap(),
           );
         },
       ),
     );
+  }
+}
+
+class _AppBootstrap extends StatefulWidget {
+  const _AppBootstrap();
+
+  @override
+  State<_AppBootstrap> createState() => _AppBootstrapState();
+}
+
+class _AppBootstrapState extends State<_AppBootstrap> {
+  bool _splashDone = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_splashDone) {
+      return SplashScreen(
+        onFinished: () => setState(() => _splashDone = true),
+      );
+    }
+    return const AuthGate();
   }
 }
 

@@ -26,6 +26,11 @@ class Property {
   final List<String> features;
   final List<String> galleryImages;
   final Map<String, dynamic>? galleryCategories;
+  /// Ordered list of tags currently valid on this property (derived from
+  /// the spaces the agent has added). Mirrors `/gallery/tags`'s
+  /// `available_tags` so the detail screen can render gallery groups
+  /// without an extra round-trip.
+  final List<String> galleryTags;
 
   Property({
     required this.id,
@@ -54,6 +59,7 @@ class Property {
     this.features = const [],
     this.galleryImages = const [],
     this.galleryCategories,
+    this.galleryTags = const [],
   });
 
   factory Property.fromJson(Map<String, dynamic> json) {
@@ -88,6 +94,9 @@ class Property {
           ? List<String>.from(json['gallery_images'])
           : const [],
       galleryCategories: json['gallery_categories'] as Map<String, dynamic>?,
+      galleryTags: json['gallery_tags'] != null
+          ? List<String>.from(json['gallery_tags'])
+          : const [],
     );
   }
 }

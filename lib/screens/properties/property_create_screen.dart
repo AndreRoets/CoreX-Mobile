@@ -1,9 +1,13 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import '../../models/property_options.dart';
+import '../../services/api_service.dart';
 import '../../theme.dart';
 import '../../providers/property_provider.dart';
+import 'property_option_dropdown.dart';
 
 class PropertyCreateScreen extends StatefulWidget {
   const PropertyCreateScreen({super.key});
@@ -32,18 +36,52 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
   String? _propertyType;
   String? _category;
   String? _listingType;
+  String? _status;
+  String? _mandateType;
   final _price = TextEditingController();
   final _description = TextEditingController();
   final List<String> _features = [];
   final _featureController = TextEditingController();
 
+  // Options
+  final ApiService _api = ApiService();
+  PropertyOptions? _options;
+  String? _optionsError;
+
   // Step 3 — Gallery
-  static const _roomTags = [
-    'Kitchen', 'Lounge', 'Bedroom 1', 'Bedroom 2', 'Bedroom 3',
-    'Bathroom 1', 'Bathroom 2', 'Garden', 'Pool', 'Garage',
-    'Exterior Front', 'Exterior Back', 'Other',
-  ];
-  final Map<String, File?> _images = {};
+  final List<File> _images = [];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadOptions());
+  }
+
+  Future<void> _loadOptions({bool forceRefresh = false}) async {
+    try {
+      final opts = await _api.getPropertyOptions(forceRefresh: forceRefresh);
+      if (!mounted) return;
+      setState(() {
+        _options = opts;
+        _optionsError = null;
+        // Apply server defaults for any unset dropdowns
+        _category ??= opts.categories.defaultSubmit;
+        _propertyType ??= opts.propertyTypes.defaultSubmit;
+        _status ??= opts.statuses.defaultSubmit;
+        _mandateType ??= opts.mandateTypes.defaultSubmit;
+        if (_listingType == null && opts.listingTypes.isNotEmpty) {
+          final sale = opts.listingTypes.where((x) => x.submit == 'sale');
+          _listingType = sale.isNotEmpty
+              ? sale.first.submit
+              : opts.listingTypes.first.submit;
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() =>
+          _optionsError = 'Could not load dropdown options — pull to retry');
+    }
+  }
 
   @override
   void dispose() {
@@ -82,6 +120,8 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
       'garages': _garages,
       if (_propertyType != null) 'property_type': _propertyType,
       if (_category != null) 'category': _category,
+      if (_status != null) 'status': _status,
+      if (_mandateType != null) 'mandate_type': _mandateType,
       if (_listingType != null) 'listing_type': _listingType,
       if (_price.text.isNotEmpty) 'price': int.tryParse(_price.text),
       'description': _description.text,
@@ -92,10 +132,8 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
 
     if (property != null) {
       // Upload images
-      for (final entry in _images.entries) {
-        if (entry.value != null) {
-          await provider.uploadImage(property.id, entry.value!, entry.key);
-        }
+      for (final image in _images) {
+        await provider.uploadImage(property.id, image, null);
       }
       if (mounted) Navigator.of(context).pop();
     } else {
@@ -171,46 +209,102 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
   }
 
   Widget _stepDetails() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    final o = _options ?? PropertyOptions.empty;
+    return RefreshIndicator(
+      onRefresh: () => _loadOptions(forceRefresh: true),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_optionsError != null) _optionsErrorBanner(),
+            _label('Beds'),
+            _stepper(_beds, (v) => setState(() => _beds = v)),
+            _label('Baths'),
+            _stepper(_baths, (v) => setState(() => _baths = v)),
+            _label('Garages'),
+            _stepper(_garages, (v) => setState(() => _garages = v)),
+            _label('Property Type'),
+            PropertyOptionDropdown(
+              options: o.propertyTypes,
+              value: _propertyType,
+              onChanged: (v) => setState(() => _propertyType = v),
+            ),
+            _label('Category'),
+            PropertyOptionDropdown(
+              options: o.categories,
+              value: _category,
+              onChanged: (v) => setState(() => _category = v),
+            ),
+            _label('Property Status'),
+            PropertyOptionDropdown(
+              options: o.statuses,
+              value: _status,
+              onChanged: (v) => setState(() => _status = v),
+            ),
+            _label('Mandate Type'),
+            PropertyOptionDropdown(
+              options: o.mandateTypes,
+              value: _mandateType,
+              onChanged: (v) => setState(() => _mandateType = v),
+            ),
+            _label('Listing Type'),
+            PropertyOptionDropdown(
+              options: o.listingTypes,
+              value: _listingType,
+              onChanged: (v) => setState(() => _listingType = v),
+            ),
+            _label('Price'),
+            _field(_price, keyboard: TextInputType.number),
+            _label('Description'),
+            _field(_description, maxLines: 4),
+            _label('Features'),
+            _featureInput(),
+            Wrap(
+              spacing: 8, runSpacing: 8,
+              children: _features.map((f) => Chip(
+                label: Text(f),
+                deleteIcon: const Icon(Icons.close, size: 16),
+                onDeleted: () => setState(() => _features.remove(f)),
+                backgroundColor: AppTheme.darkSurface2,
+                labelStyle: TextStyle(color: AppTheme.textPrimary(context)),
+                side: BorderSide.none,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radius)),
+              )).toList(),
+            ),
+            const SizedBox(height: 24),
+            _nextButton(() => _goTo(2)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _optionsErrorBanner() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+      ),
+      child: Row(
         children: [
-          _label('Beds'),
-          _stepper(_beds, (v) => setState(() => _beds = v)),
-          _label('Baths'),
-          _stepper(_baths, (v) => setState(() => _baths = v)),
-          _label('Garages'),
-          _stepper(_garages, (v) => setState(() => _garages = v)),
-          _label('Property Type'),
-          _dropdown(['Residential', 'Commercial', 'Industrial', 'Agricultural', 'Vacant Land'],
-              _propertyType, (v) => setState(() => _propertyType = v)),
-          _label('Category'),
-          _dropdown(['House', 'Apartment', 'Townhouse', 'Simplex', 'Duplex', 'Farm', 'Plot', 'Other'],
-              _category, (v) => setState(() => _category = v)),
-          _label('Listing Type'),
-          _dropdown(['For Sale', 'To Let'],
-              _listingType, (v) => setState(() => _listingType = v)),
-          _label('Price'),
-          _field(_price, keyboard: TextInputType.number),
-          _label('Description'),
-          _field(_description, maxLines: 4),
-          _label('Features'),
-          _featureInput(),
-          Wrap(
-            spacing: 8, runSpacing: 8,
-            children: _features.map((f) => Chip(
-              label: Text(f),
-              deleteIcon: const Icon(Icons.close, size: 16),
-              onDeleted: () => setState(() => _features.remove(f)),
-              backgroundColor: AppTheme.darkSurface2,
-              labelStyle: TextStyle(color: AppTheme.textPrimary(context)),
-              side: BorderSide.none,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radius)),
-            )).toList(),
+          Icon(Icons.warning_amber_rounded,
+              size: 18, color: Colors.orange.shade400),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _optionsError ?? '',
+              style: TextStyle(fontSize: 12, color: Colors.orange.shade400),
+            ),
           ),
-          const SizedBox(height: 24),
-          _nextButton(() => _goTo(2)),
+          TextButton(
+            onPressed: () => _loadOptions(forceRefresh: true),
+            child: const Text('Retry'),
+          ),
         ],
       ),
     );
@@ -222,7 +316,67 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ..._roomTags.map((tag) => _roomSection(tag)),
+          Text('Photos', style: TextStyle(
+            fontWeight: FontWeight.w600, color: AppTheme.textPrimary(context))),
+          const SizedBox(height: 12),
+          if (_images.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              decoration: BoxDecoration(
+                color: AppTheme.darkSurface2.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(AppTheme.radius),
+              ),
+              child: Center(
+                child: Text('No photos yet',
+                  style: TextStyle(color: AppTheme.textSecondary(context))),
+              ),
+            )
+          else
+            Wrap(
+              spacing: 8, runSpacing: 8,
+              children: [
+                for (int i = 0; i < _images.length; i++)
+                  Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(AppTheme.radius),
+                        child: Image.file(_images[i],
+                          width: 110, height: 110, fit: BoxFit.cover),
+                      ),
+                      Positioned(
+                        top: 4, right: 4,
+                        child: GestureDetector(
+                          onTap: () => setState(() => _images.removeAt(i)),
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              color: Colors.black54, shape: BoxShape.circle),
+                            padding: const EdgeInsets.all(4),
+                            child: const Icon(Icons.close,
+                              size: 14, color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _pickImage,
+              icon: const Icon(Icons.add_a_photo, size: 18),
+              label: const Text('Add Photo'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.brand,
+                side: BorderSide(color: AppTheme.darkSurface2),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppTheme.radius)),
+              ),
+            ),
+          ),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
@@ -240,59 +394,20 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
     );
   }
 
-  Widget _roomSection(String tag) {
-    final file = _images[tag];
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(tag, style: TextStyle(
-            fontWeight: FontWeight.w600, color: AppTheme.textPrimary(context))),
-          const SizedBox(height: 8),
-          if (file != null)
-            Stack(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(AppTheme.radius),
-                  child: Image.file(file, width: 120, height: 90, fit: BoxFit.cover),
-                ),
-                Positioned(
-                  top: 4, right: 4,
-                  child: GestureDetector(
-                    onTap: () => setState(() => _images.remove(tag)),
-                    child: Container(
-                      decoration: const BoxDecoration(
-                        color: Colors.black54, shape: BoxShape.circle),
-                      padding: const EdgeInsets.all(4),
-                      child: const Icon(Icons.close, size: 14, color: Colors.white),
-                    ),
-                  ),
-                ),
-              ],
-            )
-          else
-            OutlinedButton.icon(
-              onPressed: () => _pickImage(tag),
-              icon: const Icon(Icons.add_a_photo, size: 16),
-              label: const Text('Add Photo'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppTheme.brand,
-                side: BorderSide(color: AppTheme.darkSurface2),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppTheme.radius)),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _pickImage(String tag) async {
+  Future<void> _pickImage() async {
+    final status = await Permission.camera.request();
+    if (!status.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Camera permission is required to take photos')),
+        );
+      }
+      return;
+    }
     final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery);
+    final picked = await picker.pickImage(source: ImageSource.camera);
     if (picked != null) {
-      setState(() => _images[tag] = File(picked.path));
+      setState(() => _images.add(File(picked.path)));
     }
   }
 
@@ -307,16 +422,6 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
 
   Widget _field(TextEditingController c, {TextInputType? keyboard, int maxLines = 1}) =>
       TextField(controller: c, keyboardType: keyboard, maxLines: maxLines);
-
-  Widget _dropdown(List<String> items, String? value, ValueChanged<String?> onChanged) {
-    return DropdownButtonFormField<String>(
-      initialValue: value,
-      items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-      onChanged: onChanged,
-      dropdownColor: AppTheme.darkSurface,
-      decoration: const InputDecoration(),
-    );
-  }
 
   Widget _stepper(int value, ValueChanged<int> onChanged) {
     return Row(
