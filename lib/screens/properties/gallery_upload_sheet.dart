@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../models/gallery_tags.dart';
 import '../../services/api_service.dart';
 import '../../theme.dart';
+import 'multi_capture_camera.dart';
 
 /// Modal bottom sheet for uploading one or more photos to a property.
 ///
@@ -125,11 +126,11 @@ class _GalleryUploadSheetState extends State<GalleryUploadSheet> {
 
   Future<void> _pickFromCamera() async {
     try {
-      final picked = await _picker.pickImage(source: ImageSource.camera);
-      if (picked == null || !mounted) return;
-      setState(() => _queue.add(File(picked.path)));
+      final files = await MultiCaptureCamera.open(context);
+      if (files.isEmpty || !mounted) return;
+      setState(() => _queue.addAll(files));
     } catch (_) {
-      // user cancelled, ignore
+      // user cancelled or camera error, ignore
     }
   }
 

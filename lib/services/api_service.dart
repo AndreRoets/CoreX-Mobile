@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/env.dart';
@@ -349,31 +350,95 @@ class ApiService {
   }
 
   Future<Property> createProperty(Map<String, dynamic> data) async {
+    final reqBody = jsonEncode(data);
+    debugPrint('[createProperty] POST $baseUrl/mobile/properties');
+    debugPrint('[createProperty] body: $reqBody');
     final response = await http.post(
       Uri.parse('$baseUrl/mobile/properties'),
       headers: await _headers(),
-      body: jsonEncode(data),
+      body: reqBody,
     ).timeout(_timeout);
+
+    debugPrint('[createProperty] ${response.statusCode}: ${response.body}');
 
     if (response.statusCode == 200 || response.statusCode == 201) {
       final body = jsonDecode(response.body);
       return Property.fromJson(body['property'] ?? body);
     }
-    throw ApiException(response.statusCode, 'Failed to create property');
+    if (response.statusCode == 422) {
+      throw _parseValidationError(response.body);
+    }
+    throw ApiException(
+        response.statusCode, _serverErrorMessage(response.body, 'create'));
   }
 
   Future<Property> updateProperty(int id, Map<String, dynamic> data) async {
+    final reqBody = jsonEncode(data);
+    debugPrint('[updateProperty] PUT $baseUrl/mobile/properties/$id');
+    debugPrint('[updateProperty] body: $reqBody');
     final response = await http.put(
       Uri.parse('$baseUrl/mobile/properties/$id'),
       headers: await _headers(),
-      body: jsonEncode(data),
+      body: reqBody,
     ).timeout(_timeout);
+
+    debugPrint('[updateProperty] ${response.statusCode}: ${response.body}');
 
     if (response.statusCode == 200) {
       final body = jsonDecode(response.body);
       return Property.fromJson(body['property'] ?? body);
     }
-    throw ApiException(response.statusCode, 'Failed to update property');
+    if (response.statusCode == 422) {
+      throw _parseValidationError(response.body);
+    }
+    throw ApiException(
+        response.statusCode, _serverErrorMessage(response.body, 'update'));
+  }
+
+  /// Best-effort extraction of a useful error message from a non-success
+  /// response body. Tries Laravel's `message`/`exception` shape first,
+  /// falls back to a truncated raw body so the user (and console log) can
+  /// actually see what the server complained about instead of just
+  /// "Failed to create property".
+  String _serverErrorMessage(String body, String verb) {
+    try {
+      final json = jsonDecode(body);
+      if (json is Map) {
+        final msg = json['message']?.toString();
+        final exc = json['exception']?.toString();
+        if (msg != null && msg.isNotEmpty) {
+          return exc != null ? '$msg ($exc)' : msg;
+        }
+      }
+    } catch (_) {}
+    if (body.isEmpty) return 'Failed to $verb property (empty response)';
+    return body.length > 400
+        ? '${body.substring(0, 400)}…'
+        : body;
+  }
+
+  /// Parses a Laravel-style 422 body into a [ValidationException] with one
+  /// message per field (the first message in each `errors[field]` list).
+  ValidationException _parseValidationError(String body) {
+    String topMessage = 'Validation failed';
+    final fieldErrors = <String, String>{};
+    try {
+      final json = jsonDecode(body);
+      if (json is Map) {
+        if (json['message'] is String) topMessage = json['message'] as String;
+        final errors = json['errors'];
+        if (errors is Map) {
+          errors.forEach((k, v) {
+            if (v is List && v.isNotEmpty) {
+              fieldErrors[k.toString()] = v.first.toString();
+            } else if (v is String) {
+              fieldErrors[k.toString()] = v;
+            }
+          });
+        }
+      }
+    } catch (_) {}
+    return ValidationException(topMessage, fieldErrors);
   }
 
   // --- Spaces & Features ---
@@ -657,4 +722,12 @@ class TagValidationException extends ApiException {
   final List<String> availableTags;
   TagValidationException(String message, this.availableTags)
       : super(422, message);
+}
+
+/// Thrown by create / update endpoints when the server returns a Laravel-
+/// shaped 422 validation error. [fieldErrors] maps field name → first error
+/// message, ready to surface inline in the form.
+class ValidationException extends ApiException {
+  final Map<String, String> fieldErrors;
+  ValidationException(String message, this.fieldErrors) : super(422, message);
 }

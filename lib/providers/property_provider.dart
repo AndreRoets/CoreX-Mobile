@@ -10,6 +10,10 @@ class PropertyProvider extends ChangeNotifier {
   Property? selectedProperty;
   bool isLoading = false;
   String? error;
+  /// Per-field error messages from the most recent failed create/update.
+  /// Empty after a successful save. Consumers (the form screens) read this
+  /// to highlight individual fields with their server-side message.
+  Map<String, String> fieldErrors = const {};
 
   Future<void> fetchProperties() async {
     isLoading = true;
@@ -40,11 +44,18 @@ class PropertyProvider extends ChangeNotifier {
   Future<Property?> createProperty(Map<String, dynamic> data) async {
     isLoading = true;
     error = null;
+    fieldErrors = const {};
     notifyListeners();
     try {
       final property = await _api.createProperty(data);
       await fetchProperties();
       return property;
+    } on ValidationException catch (e) {
+      error = e.message;
+      fieldErrors = e.fieldErrors;
+      isLoading = false;
+      notifyListeners();
+      return null;
     } catch (e) {
       error = e.toString();
       isLoading = false;
@@ -56,11 +67,18 @@ class PropertyProvider extends ChangeNotifier {
   Future<bool> updateProperty(int id, Map<String, dynamic> data) async {
     isLoading = true;
     error = null;
+    fieldErrors = const {};
     notifyListeners();
     try {
       await _api.updateProperty(id, data);
       await fetchProperties();
       return true;
+    } on ValidationException catch (e) {
+      error = e.message;
+      fieldErrors = e.fieldErrors;
+      isLoading = false;
+      notifyListeners();
+      return false;
     } catch (e) {
       error = e.toString();
       isLoading = false;
