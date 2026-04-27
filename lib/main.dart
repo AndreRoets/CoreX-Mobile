@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'theme.dart';
 import 'providers/auth_provider.dart';
 import 'providers/dashboard_provider.dart';
+import 'providers/notifications_provider.dart';
 import 'providers/property_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/home_hub_screen.dart';
@@ -19,9 +20,14 @@ void main() async {
 }
 
 Future<void> _requestInitialPermissions() async {
-  final status = await Permission.camera.status;
-  if (!status.isGranted && !status.isPermanentlyDenied) {
+  final cameraStatus = await Permission.camera.status;
+  if (!cameraStatus.isGranted && !cameraStatus.isPermanentlyDenied) {
     await Permission.camera.request();
+  }
+
+  final notificationStatus = await Permission.notification.status;
+  if (!notificationStatus.isGranted && !notificationStatus.isPermanentlyDenied) {
+    await Permission.notification.request();
   }
 }
 
@@ -34,6 +40,7 @@ class CoreXApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()..checkAuth()),
         ChangeNotifierProvider(create: (_) => DashboardProvider()),
+        ChangeNotifierProvider(create: (_) => NotificationsProvider()),
         ChangeNotifierProvider(create: (_) => PropertyProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
@@ -65,7 +72,8 @@ class _AppBootstrapState extends State<_AppBootstrap> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_splashDone) {
+    final auth = context.watch<AuthProvider>();
+    if (!_splashDone || auth.isChecking) {
       return SplashScreen(
         onFinished: () => setState(() => _splashDone = true),
       );

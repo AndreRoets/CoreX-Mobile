@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/dashboard_provider.dart';
+import '../providers/notifications_provider.dart';
 import '../theme.dart';
+import '../widgets/bell_icon.dart';
 import 'calendar_screen.dart';
 import 'inbox/inbox_screen.dart';
 import 'tasks_screen.dart';
@@ -26,6 +28,9 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<DashboardProvider>().loadDashboard();
+      final notes = context.read<NotificationsProvider>();
+      notes.loadFeed();
+      notes.loadOverdue();
     });
   }
 
@@ -47,6 +52,7 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
+          const BellIcon(),
           if (_index == 0 && inboxTotal > 0)
             Padding(
               padding: const EdgeInsets.only(right: 12),

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../models/dashboard_data.dart';
 import '../../providers/dashboard_provider.dart';
 import '../../theme.dart';
+import '../../widgets/overdue_widget.dart';
 import '../../widgets/pillar_link.dart';
 import '../../widgets/pillar_tag_chip.dart';
 import '../../widgets/priority_badge.dart';
@@ -99,6 +100,7 @@ class _TodayScreenState extends State<TodayScreen> {
             onRefresh: () => dash.loadDashboard(),
             child: CustomScrollView(
               slivers: [
+                const SliverToBoxAdapter(child: OverdueWidget()),
                 // Horizon segmented — Today / Tomorrow / This Week
                 SliverToBoxAdapter(
                   child: Padding(

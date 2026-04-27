@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/env.dart';
 import '../models/dashboard_data.dart';
 import '../models/gallery_tags.dart';
+import '../models/notification_models.dart';
 import '../models/property.dart';
 import '../models/property_options.dart';
 import '../models/space.dart';
@@ -765,6 +766,158 @@ class ApiService {
     throw ApiException(status, 'Failed to upload image');
   }
 
+  // --- Notifications ---
+
+  /// Register an FCM/APNs token with the backend so the user receives push.
+  Future<void> registerDeviceToken({
+    required String platform,
+    required String token,
+    String? appVersion,
+  }) async {
+    if (useMockData) return;
+    final response = await http.post(
+      Uri.parse('$baseUrl/device-tokens'),
+      headers: await _headers(),
+      body: jsonEncode({
+        'platform': platform,
+        'token': token,
+        if (appVersion != null) 'app_version': appVersion,
+      }),
+    ).timeout(_timeout);
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw ApiException(response.statusCode, 'Failed to register device token');
+    }
+  }
+
+  Future<void> revokeDeviceToken(String token) async {
+    if (useMockData) return;
+    final response = await http.delete(
+      Uri.parse('$baseUrl/device-tokens/${Uri.encodeComponent(token)}'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw ApiException(response.statusCode, 'Failed to revoke device token');
+    }
+  }
+
+  Future<({List<NotificationItem> items, int unread})> getNotifications({
+    bool unreadOnly = false,
+    int limit = 20,
+    int? beforeId,
+  }) async {
+    if (useMockData) return (items: <NotificationItem>[], unread: 0);
+
+    final qp = <String, String>{
+      if (unreadOnly) 'unread': '1',
+      'limit': '$limit',
+      if (beforeId != null) 'before_id': '$beforeId',
+    };
+    final uri = Uri.parse('$baseUrl/notifications').replace(queryParameters: qp);
+    final response = await http.get(uri, headers: await _headers()).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final list = (body['items'] as List? ?? [])
+          .whereType<Map>()
+          .map((e) => NotificationItem.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+      final unread = body['unread'] is num ? (body['unread'] as num).toInt() : 0;
+      return (items: list, unread: unread);
+    }
+    throw ApiException(response.statusCode, 'Failed to load notifications');
+  }
+
+  Future<void> markNotificationRead(int id) async {
+    if (useMockData) return;
+    final response = await http.post(
+      Uri.parse('$baseUrl/notifications/$id/read'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, 'Failed to mark read');
+    }
+  }
+
+  Future<void> markAllNotificationsRead() async {
+    if (useMockData) return;
+    final response = await http.post(
+      Uri.parse('$baseUrl/notifications/mark-all-read'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, 'Failed to mark all read');
+    }
+  }
+
+  Future<OverdueSnapshot> getOverdueSnapshot() async {
+    if (useMockData) return OverdueSnapshot.empty();
+    final response = await http.get(
+      Uri.parse('$baseUrl/notifications/overdue'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      return OverdueSnapshot.fromJson(
+          Map<String, dynamic>.from(jsonDecode(response.body)));
+    }
+    throw ApiException(response.statusCode, 'Failed to load overdue snapshot');
+  }
+
+  Future<NotificationPreferencesData> getNotificationPreferences() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/notification-preferences'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      return NotificationPreferencesData.fromJson(
+          Map<String, dynamic>.from(jsonDecode(response.body)));
+    }
+    throw ApiException(response.statusCode, 'Failed to load notification preferences');
+  }
+
+  /// Returns saved count on success. Throws [AgencyControlledException] when
+  /// the server returns 409 with `{ error: "agency_controlled" }`.
+  Future<int> updateNotificationPreferences({
+    MasterChannels? master,
+    required List<NotificationPreference> preferences,
+  }) async {
+    final payload = {
+      if (master != null) 'master': master.toJson(),
+      'preferences': preferences.map((p) => p.toJson()).toList(),
+    };
+
+    final response = await http.put(
+      Uri.parse('$baseUrl/notification-preferences'),
+      headers: await _headers(),
+      body: jsonEncode(payload),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      if (body is Map && body['saved'] is num) {
+        return (body['saved'] as num).toInt();
+      }
+      return preferences.length;
+    }
+    if (response.statusCode == 409) {
+      try {
+        final body = jsonDecode(response.body);
+        if (body is Map && body['error'] == 'agency_controlled') {
+          throw AgencyControlledException();
+        }
+      } catch (e) {
+        if (e is AgencyControlledException) rethrow;
+      }
+      throw AgencyControlledException();
+    }
+    throw ApiException(response.statusCode, 'Failed to save preferences');
+  }
+
   // --- Mock Data ---
 
   DashboardData _mockDashboard() {
@@ -874,4 +1027,12 @@ class TagValidationException extends ApiException {
 class ValidationException extends ApiException {
   final Map<String, String> fieldErrors;
   ValidationException(String message, this.fieldErrors) : super(422, message);
+}
+
+/// Server returned 409 + `{ error: "agency_controlled" }` from the
+/// notification-preferences PUT — agency admin owns these settings, the UI
+/// must freeze the form and surface the banner.
+class AgencyControlledException extends ApiException {
+  AgencyControlledException()
+      : super(409, 'Your agency manages notification settings centrally.');
 }
