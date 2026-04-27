@@ -210,6 +210,143 @@ class ApiService {
     }
   }
 
+  /// Inbox reschedule — extends the task's due date by [days] days. Maps to
+  /// the `resolve-task` endpoint with `resolution: extended`.
+  Future<void> rescheduleTask(int taskId, int days) async {
+    await resolveTask(taskId, resolution: 'extended', extendDays: days);
+  }
+
+  /// Inbox reschedule for events — extends the event date by [days] days.
+  Future<void> rescheduleEvent(int eventId, int days) async {
+    await resolveEvent(eventId, resolution: 'extended', extendDays: days);
+  }
+
+  /// Soft-delete (archive) a single task. Used by the Done-column per-card
+  /// archive icon and also called by the server observer on status
+  /// transition when `auto_archive_done_days = 0` (so after `completeTask`
+  /// the task may already be archived — re-fetch rather than assume).
+  Future<void> archiveTask(int taskId) async {
+    if (useMockData) return;
+
+    final response = await http.delete(
+      Uri.parse('$baseUrl/command-center/tasks/$taskId'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw ApiException(response.statusCode, 'Failed to archive task');
+    }
+  }
+
+  /// Bulk archive — soft-deletes every Done-column task for the current user.
+  /// Returns the server's `archived` count.
+  Future<int> archiveAllDone() async {
+    if (useMockData) return 0;
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/command-center/tasks/archive-done'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      return body is Map && body['archived'] is int ? body['archived'] as int : 0;
+    }
+    throw ApiException(response.statusCode, 'Failed to clear Done column');
+  }
+
+  /// Archived tasks, pre-grouped by `deleted_at` day.
+  Future<ArchivedTasksData> getArchivedTasks() async {
+    if (useMockData) return ArchivedTasksData();
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/command-center/tasks/archived'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      return ArchivedTasksData.fromJson(jsonDecode(response.body));
+    }
+    throw ApiException(response.statusCode, 'Failed to load archived tasks');
+  }
+
+  /// Restore a soft-deleted task. Returns the restored task (now back in the
+  /// Done column).
+  Future<CommandTask> restoreTask(int taskId) async {
+    if (useMockData) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      return CommandTask(id: taskId, title: '');
+    }
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/command-center/tasks/$taskId/restore'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      return CommandTask.fromJson(body is Map<String, dynamic> ? body : (body['task'] ?? {}));
+    }
+    throw ApiException(response.statusCode, 'Failed to restore task');
+  }
+
+  /// Performance payload (full scorecard, activity, property health).
+  /// Returned as a raw Map for now — a dedicated model lands in PR 3.
+  Future<Map<String, dynamic>> getPerformance() async {
+    if (useMockData) return {};
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/command-center/performance'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+      return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+    }
+    throw ApiException(response.statusCode, 'Failed to load performance');
+  }
+
+  /// User settings (reminder panels, task board, calendar prefs, channels).
+  /// The response includes `is_agency_controlled` — when true the UI must
+  /// disable inputs and show the amber banner.
+  Future<Map<String, dynamic>> getUserSettings() async {
+    if (useMockData) return {};
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/command-center/user-settings'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+      return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+    }
+    throw ApiException(response.statusCode, 'Failed to load user settings');
+  }
+
+  /// PUT user settings. `auto_archive_done_days` accepts null (never), 0
+  /// (immediate, via server observer), or 1..365. Empty-string submissions
+  /// are coerced to null server-side.
+  Future<Map<String, dynamic>> updateUserSettings(Map<String, dynamic> payload) async {
+    if (useMockData) return payload;
+
+    final response = await http.put(
+      Uri.parse('$baseUrl/command-center/user-settings'),
+      headers: await _headers(),
+      body: jsonEncode(payload),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+      return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(403, 'Agency-controlled — only agency admins can change these');
+    }
+    throw ApiException(response.statusCode, 'Failed to update user settings');
+  }
+
   // --- Calendar Events ---
 
   Future<List<CalendarEvent>> getCalendarEvents({String? month}) async {
@@ -656,16 +793,23 @@ class ApiService {
       ],
       scorecard: AgentScorecard(overallScore: 72, tasksCompleted: 18, tasksTotal: 25, propertiesAttended: 12, propertiesTotal: 16),
       totalOverdue: 3,
-      overduePopupTasks: [
+      inboxOverdueTasks: [
         CommandTask(id: 100, title: 'Call attorney re: transfer', taskType: 'follow_up', priority: 'high',
-            dueDate: DateTime.now().subtract(const Duration(days: 2)), propertyAddress: '12 Marine Drive, Amanzimtoti'),
+            dueDate: DateTime.now().subtract(const Duration(days: 2)),
+            propertyId: 1, propertyAddress: '12 Marine Drive, Amanzimtoti', pillarTag: 'property'),
         CommandTask(id: 101, title: 'Upload FICA documents', taskType: 'document_upload', priority: 'critical',
-            dueDate: DateTime.now().subtract(const Duration(days: 5)), propertyAddress: '45 Beach Road, Umkomaas'),
+            dueDate: DateTime.now().subtract(const Duration(days: 5)),
+            propertyId: 2, propertyAddress: '45 Beach Road, Umkomaas', pillarTag: 'property'),
       ],
-      overduePopupEvents: [
+      inboxOverdueEvents: [
         CalendarEvent(id: 200, title: 'Property viewing with buyer', eventType: 'deal', priority: 'high',
-            eventDate: DateTime.now().subtract(const Duration(days: 1)), colour: '#3b82f6', propertyAddress: '23 Kingsway, Scottburgh'),
+            eventDate: DateTime.now().subtract(const Duration(days: 1)), colour: '#3b82f6',
+            propertyId: 4, propertyAddress: '23 Kingsway, Scottburgh', pillarTag: 'property'),
       ],
+      inboxCandidateDocs: [
+        CandidateDoc(id: 10, documentId: 1, documentName: 'Mandate Agreement', creatorName: 'Sarah Chen', status: 'pending'),
+      ],
+      inboxTotal: 4,
     );
   }
 

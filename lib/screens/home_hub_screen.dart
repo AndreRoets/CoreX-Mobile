@@ -5,7 +5,7 @@ import '../providers/auth_provider.dart';
 import '../widgets/greeting_card.dart';
 import '../widgets/feature_square.dart';
 import '../widgets/collapse_menu.dart';
-import 'dashboard_screen.dart';
+import 'main_tabs_screen.dart';
 import 'properties/property_list_screen.dart';
 
 class HomeHubScreen extends StatelessWidget {
@@ -59,7 +59,7 @@ class HomeHubScreen extends StatelessWidget {
                           onTap: () {
                             Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (_) => const DashboardScreen(),
+                                builder: (_) => const MainTabsScreen(),
                               ),
                             );
                           },

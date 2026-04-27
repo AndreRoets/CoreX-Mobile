@@ -4,7 +4,7 @@ import '../theme.dart';
 import '../providers/dashboard_provider.dart';
 import '../models/dashboard_data.dart';
 import '../widgets/task_card.dart';
-import 'create_task_sheet.dart';
+import 'shared/quick_add_sheet.dart';
 
 class TasksScreen extends StatefulWidget {
   final bool embedded;
@@ -165,7 +165,7 @@ class _TasksScreenState extends State<TasksScreen> {
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (_) => const CreateTaskSheet(),
+        builder: (_) => const QuickAddSheet(initialMode: 'task'),
       ),
       backgroundColor: AppTheme.brand,
       child: const Icon(Icons.add, color: Colors.white),

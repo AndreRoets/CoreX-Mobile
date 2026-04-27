@@ -1,3 +1,8 @@
+/// Cockpit data returned by `GET /api/command-center/dashboard`.
+///
+/// The same endpoint feeds the Today tab and the Inbox tab — one round-trip.
+/// Inbox rendering reads the `inbox*` fields; legacy Today agenda reads
+/// `todayEvents`/`myTasks`.
 class DashboardData {
   final int mtdPoints;
   final int monthlyTarget;
@@ -11,8 +16,12 @@ class DashboardData {
   final List<CandidateDoc> candidateDocs;
   final AgentScorecard? scorecard;
   final int totalOverdue;
-  final List<CommandTask> overduePopupTasks;
-  final List<CalendarEvent> overduePopupEvents;
+
+  // Cockpit inbox — concatenate in this order (urgency).
+  final List<CommandTask> inboxOverdueTasks;
+  final List<CalendarEvent> inboxOverdueEvents;
+  final List<CandidateDoc> inboxCandidateDocs;
+  final int inboxTotal;
 
   DashboardData({
     this.mtdPoints = 0,
@@ -27,8 +36,10 @@ class DashboardData {
     this.candidateDocs = const [],
     this.scorecard,
     this.totalOverdue = 0,
-    this.overduePopupTasks = const [],
-    this.overduePopupEvents = const [],
+    this.inboxOverdueTasks = const [],
+    this.inboxOverdueEvents = const [],
+    this.inboxCandidateDocs = const [],
+    this.inboxTotal = 0,
   });
 
   factory DashboardData.fromJson(Map<String, dynamic> json) {
@@ -36,17 +47,40 @@ class DashboardData {
       mtdPoints: json['mtd_points'] ?? 0,
       monthlyTarget: json['monthly_target'] ?? 300,
       taskSummary: TaskSummary.fromJson(json['task_summary'] ?? {}),
-      propHealthSummary: PropertyHealthSummary.fromJson(json['prop_health_summary'] ?? {}),
-      todayEvents: (json['today_events'] as List? ?? []).map((e) => CalendarEvent.fromJson(e)).toList(),
-      overdueEvents: (json['overdue_events'] as List? ?? []).map((e) => CalendarEvent.fromJson(e)).toList(),
-      myTasks: (json['my_tasks'] as List? ?? []).map((e) => CommandTask.fromJson(e)).toList(),
-      overdueTasks: (json['overdue_tasks'] as List? ?? []).map((e) => CommandTask.fromJson(e)).toList(),
-      propsNeedingAttention: (json['props_needing_attention'] as List? ?? []).map((e) => PropertyHealth.fromJson(e)).toList(),
-      candidateDocs: (json['candidate_docs'] as List? ?? []).map((e) => CandidateDoc.fromJson(e)).toList(),
-      scorecard: json['scorecard'] != null ? AgentScorecard.fromJson(json['scorecard']) : null,
+      propHealthSummary:
+          PropertyHealthSummary.fromJson(json['prop_health_summary'] ?? {}),
+      todayEvents: (json['today_events'] as List? ?? [])
+          .map((e) => CalendarEvent.fromJson(e))
+          .toList(),
+      overdueEvents: (json['overdue_events'] as List? ?? [])
+          .map((e) => CalendarEvent.fromJson(e))
+          .toList(),
+      myTasks: (json['my_tasks'] as List? ?? [])
+          .map((e) => CommandTask.fromJson(e))
+          .toList(),
+      overdueTasks: (json['overdue_tasks'] as List? ?? [])
+          .map((e) => CommandTask.fromJson(e))
+          .toList(),
+      propsNeedingAttention: (json['props_needing_attention'] as List? ?? [])
+          .map((e) => PropertyHealth.fromJson(e))
+          .toList(),
+      candidateDocs: (json['candidate_docs'] as List? ?? [])
+          .map((e) => CandidateDoc.fromJson(e))
+          .toList(),
+      scorecard: json['scorecard'] != null
+          ? AgentScorecard.fromJson(json['scorecard'])
+          : null,
       totalOverdue: json['total_overdue'] ?? 0,
-      overduePopupTasks: (json['overdue_popup_tasks'] as List? ?? []).map((e) => CommandTask.fromJson(e)).toList(),
-      overduePopupEvents: (json['overdue_popup_events'] as List? ?? []).map((e) => CalendarEvent.fromJson(e)).toList(),
+      inboxOverdueTasks: (json['inbox_overdue_tasks'] as List? ?? [])
+          .map((e) => CommandTask.fromJson(e))
+          .toList(),
+      inboxOverdueEvents: (json['inbox_overdue_events'] as List? ?? [])
+          .map((e) => CalendarEvent.fromJson(e))
+          .toList(),
+      inboxCandidateDocs: (json['inbox_candidate_docs'] as List? ?? [])
+          .map((e) => CandidateDoc.fromJson(e))
+          .toList(),
+      inboxTotal: json['inbox_total'] ?? 0,
     );
   }
 }
@@ -101,6 +135,8 @@ class CalendarEvent {
   final int? propertyId;
   final int? contactId;
   final String? propertyAddress;
+  final String? contactName;
+  final String? pillarTag; // server-supplied: 'property' | 'deal' | 'contact' | null
   final bool sendReminder;
   final String? description;
 
@@ -120,17 +156,30 @@ class CalendarEvent {
     this.propertyId,
     this.contactId,
     this.propertyAddress,
+    this.contactName,
+    this.pillarTag,
     this.sendReminder = true,
     this.description,
   });
 
-  bool get isOverdue => status == 'overdue' || (status == 'pending' && eventDate.isBefore(DateTime.now()));
+  bool get isOverdue =>
+      status == 'overdue' || (status == 'pending' && eventDate.isBefore(DateTime.now()));
 
   String get overdueDuration {
     final diff = DateTime.now().difference(eventDate);
     if (diff.inDays > 0) return '${diff.inDays}d';
     if (diff.inHours > 0) return '${diff.inHours}h';
     return '${diff.inMinutes}m';
+  }
+
+  /// Derived pillar tag, falling back to server-computed value or the
+  /// `event_type in ['deal','lease']` convention described in the cockpit spec.
+  String? get effectivePillarTag {
+    if (pillarTag != null && pillarTag!.isNotEmpty) return pillarTag;
+    if (propertyId != null) return 'property';
+    if (eventType == 'deal' || eventType == 'lease') return 'deal';
+    if (contactId != null) return 'contact';
+    return null;
   }
 
   factory CalendarEvent.fromJson(Map<String, dynamic> json) {
@@ -150,6 +199,8 @@ class CalendarEvent {
       propertyId: json['property_id'],
       contactId: json['contact_id'],
       propertyAddress: json['property']?['display_address'] ?? json['property_address'],
+      contactName: json['contact']?['name'] ?? json['contact_name'],
+      pillarTag: json['pillar_tag'],
       sendReminder: json['send_reminder'] == true || json['send_reminder'] == 1,
       description: json['description'],
     );
@@ -178,13 +229,19 @@ class CommandTask {
   final String? resolutionNote;
   final int? assignedTo;
   final DateTime? dueDate;
+  final DateTime? startedAt;
   final DateTime? completedAt;
+  final DateTime? deletedAt;
   final int? propertyId;
   final int? contactId;
   final int? dealId;
   final String? propertyAddress;
+  final String? contactName;
+  final String? pillarTag;
   final String? description;
   final bool sendReminder;
+  // Server-computed overdue flag (takes precedence over client-side calc when present).
+  final bool? serverIsOverdue;
 
   CommandTask({
     required this.id,
@@ -196,16 +253,28 @@ class CommandTask {
     this.resolutionNote,
     this.assignedTo,
     this.dueDate,
+    this.startedAt,
     this.completedAt,
+    this.deletedAt,
     this.propertyId,
     this.contactId,
     this.dealId,
     this.propertyAddress,
+    this.contactName,
+    this.pillarTag,
     this.description,
     this.sendReminder = true,
+    this.serverIsOverdue,
   });
 
-  bool get isOverdue => dueDate != null && dueDate!.isBefore(DateTime.now()) && status != 'done' && status != 'dismissed';
+  bool get isOverdue =>
+      serverIsOverdue ??
+      (dueDate != null &&
+          dueDate!.isBefore(DateTime.now()) &&
+          status != 'done' &&
+          status != 'dismissed');
+
+  bool get isArchived => deletedAt != null;
 
   String get overdueDuration {
     if (dueDate == null) return '';
@@ -213,6 +282,14 @@ class CommandTask {
     if (diff.inDays > 0) return '${diff.inDays}d';
     if (diff.inHours > 0) return '${diff.inHours}h';
     return '${diff.inMinutes}m';
+  }
+
+  String? get effectivePillarTag {
+    if (pillarTag != null && pillarTag!.isNotEmpty) return pillarTag;
+    if (propertyId != null) return 'property';
+    if (dealId != null) return 'deal';
+    if (contactId != null) return 'contact';
+    return null;
   }
 
   factory CommandTask.fromJson(Map<String, dynamic> json) {
@@ -226,13 +303,18 @@ class CommandTask {
       resolutionNote: json['resolution_note'],
       assignedTo: json['assigned_to'],
       dueDate: json['due_date'] != null ? DateTime.tryParse(json['due_date']) : null,
+      startedAt: json['started_at'] != null ? DateTime.tryParse(json['started_at']) : null,
       completedAt: json['completed_at'] != null ? DateTime.tryParse(json['completed_at']) : null,
+      deletedAt: json['deleted_at'] != null ? DateTime.tryParse(json['deleted_at']) : null,
       propertyId: json['property_id'],
       contactId: json['contact_id'],
       dealId: json['deal_id'],
       propertyAddress: json['property']?['display_address'] ?? json['property_address'],
+      contactName: json['contact']?['name'] ?? json['contact_name'],
+      pillarTag: json['pillar_tag'],
       description: json['description'],
       sendReminder: json['send_reminder'] == true || json['send_reminder'] == 1,
+      serverIsOverdue: json['is_overdue'] is bool ? json['is_overdue'] as bool : null,
     );
   }
 }
@@ -283,19 +365,33 @@ class HealthFactor {
 }
 
 class CandidateDoc {
+  final int? id;
   final int? documentId;
   final String documentName;
   final String creatorName;
   final String status;
+  final String? reviewUrl;
+  final DateTime? createdAt;
 
-  CandidateDoc({this.documentId, this.documentName = '', this.creatorName = '', this.status = ''});
+  CandidateDoc({
+    this.id,
+    this.documentId,
+    this.documentName = '',
+    this.creatorName = '',
+    this.status = '',
+    this.reviewUrl,
+    this.createdAt,
+  });
 
   factory CandidateDoc.fromJson(Map<String, dynamic> json) {
     return CandidateDoc(
+      id: json['id'],
       documentId: json['document_id'] ?? json['document']?['id'],
       documentName: json['document']?['name'] ?? json['document_name'] ?? '',
       creatorName: json['creator']?['name'] ?? json['creator_name'] ?? '',
       status: json['status'] ?? '',
+      reviewUrl: json['review_url'],
+      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at']) : null,
     );
   }
 }
@@ -306,6 +402,10 @@ class AgentScorecard {
   final int tasksTotal;
   final int propertiesAttended;
   final int propertiesTotal;
+  final int eventsCompleted;
+  final int documentsUploaded;
+  final int tasksOverdue;
+  final double avgResponseHours;
 
   AgentScorecard({
     this.overallScore = 0,
@@ -313,6 +413,10 @@ class AgentScorecard {
     this.tasksTotal = 0,
     this.propertiesAttended = 0,
     this.propertiesTotal = 0,
+    this.eventsCompleted = 0,
+    this.documentsUploaded = 0,
+    this.tasksOverdue = 0,
+    this.avgResponseHours = 0.0,
   });
 
   factory AgentScorecard.fromJson(Map<String, dynamic> json) {
@@ -322,6 +426,44 @@ class AgentScorecard {
       tasksTotal: json['tasks_total'] ?? 0,
       propertiesAttended: json['properties_attended'] ?? 0,
       propertiesTotal: json['properties_total'] ?? 0,
+      eventsCompleted: json['events_completed'] ?? 0,
+      documentsUploaded: json['documents_uploaded'] ?? 0,
+      tasksOverdue: json['tasks_overdue'] ?? 0,
+      avgResponseHours: (json['avg_response_hours'] ?? 0).toDouble(),
+    );
+  }
+}
+
+/// Response shape for `GET /api/command-center/tasks/archived` — tasks
+/// pre-grouped by the day they were archived.
+class ArchivedTasksData {
+  final int total;
+  final List<ArchivedGroup> groups;
+
+  ArchivedTasksData({this.total = 0, this.groups = const []});
+
+  factory ArchivedTasksData.fromJson(Map<String, dynamic> json) {
+    return ArchivedTasksData(
+      total: json['total'] ?? 0,
+      groups: (json['groups'] as List? ?? [])
+          .map((g) => ArchivedGroup.fromJson(g))
+          .toList(),
+    );
+  }
+}
+
+class ArchivedGroup {
+  final DateTime date;
+  final List<CommandTask> tasks;
+
+  ArchivedGroup({required this.date, this.tasks = const []});
+
+  factory ArchivedGroup.fromJson(Map<String, dynamic> json) {
+    return ArchivedGroup(
+      date: DateTime.tryParse(json['date'] ?? '') ?? DateTime.now(),
+      tasks: (json['tasks'] as List? ?? [])
+          .map((t) => CommandTask.fromJson(t))
+          .toList(),
     );
   }
 }

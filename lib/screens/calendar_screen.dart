@@ -4,7 +4,7 @@ import '../theme.dart';
 import '../providers/dashboard_provider.dart';
 import '../models/dashboard_data.dart';
 import '../widgets/event_card.dart';
-import 'create_event_sheet.dart';
+import 'shared/quick_add_sheet.dart';
 
 class CalendarScreen extends StatefulWidget {
   final bool embedded;
@@ -138,7 +138,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (_) => const CreateEventSheet(),
+        builder: (_) => const QuickAddSheet(initialMode: 'event'),
       ),
       backgroundColor: AppTheme.brand,
       child: const Icon(Icons.add, color: Colors.white),

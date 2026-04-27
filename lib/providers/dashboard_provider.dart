@@ -138,4 +138,40 @@ class DashboardProvider extends ChangeNotifier {
       await loadDashboard();
     } catch (_) {}
   }
+
+  /// Inbox/Timeline reschedule — wraps resolve-task with extend_days.
+  Future<void> rescheduleTask(int taskId, int days) async {
+    try {
+      await _api.rescheduleTask(taskId, days);
+      await loadDashboard();
+    } catch (_) {}
+  }
+
+  Future<void> rescheduleEvent(int eventId, int days) async {
+    try {
+      await _api.rescheduleEvent(eventId, days);
+      await loadDashboard();
+    } catch (_) {}
+  }
+
+  /// Per-card archive (Done column and elsewhere). If the server's
+  /// `auto_archive_done_days = 0` observer already archived the row on
+  /// `completeTask`, calling this again is a safe no-op from the user's
+  /// perspective (a 404 is swallowed by the try/catch).
+  Future<void> archiveTask(int taskId) async {
+    try {
+      await _api.archiveTask(taskId);
+      await loadDashboard();
+    } catch (_) {}
+  }
+
+  Future<int> archiveAllDone() async {
+    try {
+      final archived = await _api.archiveAllDone();
+      await loadDashboard();
+      return archived;
+    } catch (_) {
+      return 0;
+    }
+  }
 }
