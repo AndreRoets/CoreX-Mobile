@@ -32,9 +32,9 @@ class PropertyOptionDropdown extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         decoration: BoxDecoration(
-          color: AppTheme.darkSurface2.withValues(alpha: 0.4),
+          color: AppTheme.surface2(context).withValues(alpha: 0.4),
           borderRadius: BorderRadius.circular(AppTheme.radius),
-          border: Border.all(color: AppTheme.darkSurface2),
+          border: Border.all(color: AppTheme.borderColor(context)),
         ),
         child: Text(
           emptyHint ??
@@ -77,7 +77,7 @@ class PropertyOptionDropdown extends StatelessWidget {
               ),
           ],
           onChanged: onChanged,
-          dropdownColor: AppTheme.darkSurface,
+          dropdownColor: AppTheme.surface(context),
           decoration: const InputDecoration(),
         ),
         if (isStale)

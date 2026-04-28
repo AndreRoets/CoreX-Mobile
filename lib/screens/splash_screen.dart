@@ -1,14 +1,13 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../theme.dart';
 
 /// Animated app-open splash.
 ///
 /// Sequence:
-///   1. "CoreX" spin-pops in (scale 0 → 1 + rotate 1.5 turns) with bounce
-///   2. Brand underline sweeps in beneath it
-///   3. Tagline fades up
-///   4. Subtle idle pulse, then [onFinished]
+///   1. Letters of "CoreX" rise + fade in one by one (staggered)
+///   2. Underline draws beneath them
+///   3. Tagline rises in, then [onFinished]
 class SplashScreen extends StatefulWidget {
   final VoidCallback onFinished;
 
@@ -22,13 +21,12 @@ class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
   late final AnimationController _controller;
 
-  late final Animation<double> _titleScale;
-  late final Animation<double> _titleRotate;
-  late final Animation<double> _titleFade;
   late final Animation<double> _glowFade;
   late final Animation<double> _underlineSweep;
   late final Animation<double> _taglineFade;
   late final Animation<Offset> _taglineSlide;
+
+  static const String _word = 'CoreX';
 
   @override
   void initState() {
@@ -36,56 +34,35 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2400),
+      duration: const Duration(milliseconds: 1700),
     );
 
-    // Pop + spin in
-    _titleScale = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.00, 0.55, curve: Curves.elasticOut),
-      ),
-    );
-    _titleRotate = Tween<double>(begin: -1.5, end: 0.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.00, 0.55, curve: Curves.easeOutCubic),
-      ),
-    );
-    _titleFade = CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0.00, 0.30, curve: Curves.easeOut),
-    );
-
-    // Glow behind wordmark
     _glowFade = CurvedAnimation(
       parent: _controller,
-      curve: const Interval(0.10, 0.55, curve: Curves.easeOut),
+      curve: const Interval(0.20, 0.70, curve: Curves.easeOut),
     );
 
-    // Underline sweep
     _underlineSweep = CurvedAnimation(
       parent: _controller,
-      curve: const Interval(0.45, 0.75, curve: Curves.easeOutCubic),
+      curve: const Interval(0.55, 0.85, curve: Curves.easeOutCubic),
     );
 
-    // Tagline
     _taglineFade = CurvedAnimation(
       parent: _controller,
-      curve: const Interval(0.65, 0.90, curve: Curves.easeOut),
+      curve: const Interval(0.70, 1.00, curve: Curves.easeOut),
     );
     _taglineSlide = Tween<Offset>(
-      begin: const Offset(0, 0.6),
+      begin: const Offset(0, 0.2),
       end: Offset.zero,
     ).animate(
       CurvedAnimation(
         parent: _controller,
-        curve: const Interval(0.65, 0.90, curve: Curves.easeOutCubic),
+        curve: const Interval(0.70, 1.00, curve: Curves.easeOutCubic),
       ),
     );
 
     _controller.forward().whenComplete(() async {
-      await Future.delayed(const Duration(milliseconds: 450));
+      await Future.delayed(const Duration(milliseconds: 350));
       if (mounted) widget.onFinished();
     });
   }
@@ -96,15 +73,47 @@ class _SplashScreenState extends State<SplashScreen>
     super.dispose();
   }
 
+  // Per-letter staggered fade+slide. Each letter gets a 0.12-wide window,
+  // starting 0.06 apart, within the controller's [0..1] timeline.
+  Animation<double> _letterFade(int i, int total) {
+    final start = 0.05 + i * 0.07;
+    final end = (start + 0.22).clamp(0.0, 1.0);
+    return CurvedAnimation(
+      parent: _controller,
+      curve: Interval(start, end, curve: Curves.easeOut),
+    );
+  }
+
+  Animation<Offset> _letterSlide(int i, int total) {
+    final start = 0.05 + i * 0.07;
+    final end = (start + 0.22).clamp(0.0, 1.0);
+    return Tween<Offset>(
+      begin: const Offset(0, 0.35),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Interval(start, end, curve: Curves.easeOutCubic),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgTop = isDark ? AppTheme.darkBackground : AppTheme.lightBackground;
     final bgBottom = isDark ? AppTheme.darkSurface : AppTheme.lightSurface2;
-    final titleColor =
-        isDark ? AppTheme.darkTextPrimary : AppTheme.lightTextPrimary;
+    final baseColor = isDark
+        ? AppTheme.darkTextPrimary.withValues(alpha: 0.92)
+        : AppTheme.lightTextPrimary.withValues(alpha: 0.92);
     final taglineColor =
         isDark ? AppTheme.darkTextSecondary : AppTheme.lightTextSecondary;
+
+    final letterStyle = GoogleFonts.spaceGrotesk(
+      fontSize: 64,
+      fontWeight: FontWeight.w600,
+      letterSpacing: -1.2,
+      height: 1.0,
+      color: baseColor,
+    );
 
     return Scaffold(
       body: AnimatedBuilder(
@@ -124,66 +133,53 @@ class _SplashScreenState extends State<SplashScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Wordmark stack: glow + spinning pop-in text
                   SizedBox(
-                    height: 120,
+                    height: 110,
                     child: Stack(
                       alignment: Alignment.center,
                       children: [
-                        // Radial brand glow
+                        // Subtle radial glow — much softer than before
                         Opacity(
-                          opacity: _glowFade.value * 0.6,
+                          opacity: _glowFade.value * 0.22,
                           child: Container(
-                            width: 260,
+                            width: 280,
                             height: 180,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               gradient: RadialGradient(
                                 colors: [
-                                  AppTheme.brand.withValues(alpha: 0.45),
+                                  AppTheme.brand.withValues(alpha: 0.35),
                                   AppTheme.brand.withValues(alpha: 0.0),
                                 ],
                               ),
                             ),
                           ),
                         ),
-                        // Spinning + popping wordmark
-                        Opacity(
-                          opacity: _titleFade.value,
-                          child: Transform.rotate(
-                            angle: _titleRotate.value * 2 * math.pi,
-                            child: Transform.scale(
-                              scale: _titleScale.value,
-                              child: ShaderMask(
-                                shaderCallback: (rect) => const LinearGradient(
-                                  colors: [
-                                    AppTheme.brand,
-                                    Color(0xFF38BDF8),
-                                    Color(0xFF7DD3FC),
-                                  ],
-                                ).createShader(rect),
-                                child: Text(
-                                  'CoreX',
-                                  style: TextStyle(
-                                    color: titleColor,
-                                    fontSize: 64,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 3.0,
-                                  ),
+
+                        // Per-letter reveal
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            for (int i = 0; i < _word.length; i++)
+                              FadeTransition(
+                                opacity: _letterFade(i, _word.length),
+                                child: SlideTransition(
+                                  position: _letterSlide(i, _word.length),
+                                  child: Text(_word[i], style: letterStyle),
                                 ),
                               ),
-                            ),
-                          ),
+                          ],
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 16),
 
-                  // Animated underline sweep
+                  // Underline draw-in
                   SizedBox(
                     width: 180,
-                    height: 3,
+                    height: 2,
                     child: Align(
                       alignment: Alignment.center,
                       child: FractionallySizedBox(
@@ -191,11 +187,11 @@ class _SplashScreenState extends State<SplashScreen>
                         child: Container(
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(2),
-                            gradient: const LinearGradient(
+                            gradient: LinearGradient(
                               colors: [
-                                Color(0x000EA5E9),
-                                AppTheme.brand,
-                                Color(0x000EA5E9),
+                                const Color(0x000EA5E9),
+                                AppTheme.brand.withValues(alpha: 0.7),
+                                const Color(0x000EA5E9),
                               ],
                             ),
                           ),
@@ -205,18 +201,17 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                   const SizedBox(height: 18),
 
-                  // Tagline
                   FadeTransition(
                     opacity: _taglineFade,
                     child: SlideTransition(
                       position: _taglineSlide,
                       child: Text(
                         'Powering your property universe',
-                        style: TextStyle(
+                        style: GoogleFonts.inter(
                           color: taglineColor,
-                          fontSize: 14,
+                          fontSize: 12,
                           fontWeight: FontWeight.w500,
-                          letterSpacing: 1.2,
+                          letterSpacing: 2.4,
                         ),
                       ),
                     ),

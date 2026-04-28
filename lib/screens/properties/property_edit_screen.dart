@@ -160,13 +160,31 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
         _applyOptionDefaults();
         // Snapshot for dirty diff (after all values are set above).
         _initialValues = _captureSnapshot();
-        // Parse gallery categories
+        // Parse gallery categories. The backend has returned a few shapes
+        // over the life of this endpoint — handle each so the grid actually
+        // renders the photos:
+        //   - { categories: { Tag: [url, url] } }            (legacy)
+        //   - { categories: { Tag: [{ url, ... }, ...] } }   (current)
+        //   - { Tag: [...] }                                  (flat)
         if (p.galleryCategories != null) {
-          final cats = p.galleryCategories!['categories'];
-          if (cats is Map<String, dynamic>) {
-            _existingImages = cats.map((k, v) =>
-                MapEntry(k, List<String>.from(v is List ? v : [])));
-          }
+          final raw = p.galleryCategories!;
+          final cats = raw['categories'] is Map ? raw['categories'] as Map : raw;
+          _existingImages = <String, List<String>>{};
+          cats.forEach((k, v) {
+            if (v is! List) return;
+            final urls = <String>[];
+            for (final item in v) {
+              if (item is String) {
+                urls.add(_absoluteImageUrl(item));
+              } else if (item is Map) {
+                final u = item['url'] ?? item['src'] ?? item['path'];
+                if (u is String && u.isNotEmpty) {
+                  urls.add(_absoluteImageUrl(u));
+                }
+              }
+            }
+            _existingImages[k.toString()] = urls;
+          });
         }
         _loaded = true;
       });
@@ -417,7 +435,7 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
                           height: 4,
                           margin: EdgeInsets.only(right: i < 3 ? 8 : 0),
                           decoration: BoxDecoration(
-                            color: active ? AppTheme.brand : AppTheme.darkSurface2,
+                            color: active ? AppTheme.brand : AppTheme.surface2(context),
                             borderRadius: BorderRadius.circular(2),
                           ),
                         ),
@@ -478,10 +496,6 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (_optionsError != null) _optionsErrorBanner(),
-            _label('Listing Type'),
-            _listingTypeSegmented(o),
-            if (_errorFor('listing_type') != null)
-              _inlineFieldError(_errorFor('listing_type')!),
             _label('Title'),
             _errorField(
               controller: _title,
@@ -528,13 +542,6 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
               value: _mandateType,
               onChanged: (v) => setState(() => _mandateType = v),
             ),
-            _label('Excerpt (max 500 chars)'),
-            _errorField(
-              controller: _excerpt,
-              errorField: 'excerpt',
-              maxLines: 2,
-              maxLength: 500,
-            ),
             _label('Description'),
             _errorField(
               controller: _description,
@@ -572,48 +579,6 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  /// Listing Type rendered as a chip-based segmented control fed by
-  /// `options.listingTypes`. Falls back to sale/rental when options
-  /// haven't loaded yet so the field is usable offline.
-  Widget _listingTypeSegmented(PropertyOptions o) {
-    final items = o.listingTypes.isNotEmpty
-        ? o.listingTypes
-        : const [
-            PropertyOption(display: 'For Sale', submit: 'sale'),
-            PropertyOption(display: 'For Rental', submit: 'rental'),
-          ];
-    return Wrap(
-      spacing: 8,
-      children: items.map((opt) {
-        final isSelected = _listingType == opt.submit;
-        return ChoiceChip(
-          label: Text(opt.display),
-          selected: isSelected,
-          onSelected: (_) {
-            setState(() {
-              _listingType = opt.submit;
-              if (opt.submit != 'rental') {
-                _rentalAmount.clear();
-                _depositAmount.clear();
-                _leaseStart.clear();
-                _leaseEnd.clear();
-              }
-            });
-            _clearFieldError('listing_type');
-          },
-          backgroundColor: AppTheme.darkSurface2,
-          selectedColor: AppTheme.brand,
-          labelStyle: TextStyle(
-            color:
-                isSelected ? Colors.white : AppTheme.textPrimary(context),
-            fontWeight: FontWeight.w600,
-          ),
-          side: BorderSide.none,
-        );
-      }).toList(),
     );
   }
 
@@ -773,6 +738,8 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
             ...liveTags.map((tag) => _gallerySection(tag, isLive: true)),
             ...extraKeys.map((tag) => _gallerySection(tag, isLive: false)),
           ],
+          const SizedBox(height: 16),
+          _customTagManager(liveTags),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity, height: 48,
@@ -791,61 +758,304 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
     );
   }
 
+  /// Tags that are derived from the spaces catalog (Bedroom 1, Bathroom 2,
+  /// Garage, etc.) — these can't be removed via the tag endpoint, so we hide
+  /// the × on the chip. Backend silently no-ops a delete; UX is just cleaner
+  /// without the affordance.
+  static final RegExp _derivedTagPattern = RegExp(
+      r'^(Bedroom|Bathroom|Garage|Kitchen|Lounge|Dining Room|Study|Patio|Garden|Pool|Flatlet)( \d+)?$');
+
+  bool _isDerivedTag(String tag) => _derivedTagPattern.hasMatch(tag);
+
+  /// Backend sometimes returns relative paths (`/storage/...`) — prepend the
+  /// API host so `Image.network` can actually fetch them.
+  String _absoluteImageUrl(String url) {
+    if (url.isEmpty) return url;
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    final base = ApiService.baseUrl.replaceAll(RegExp(r'/api/?$'), '');
+    return url.startsWith('/') ? '$base$url' : '$base/$url';
+  }
+
+  Widget _customTagManager(List<String> liveTags) {
+    // Custom tags = anything in the live list that isn't derived from a
+    // space (Bedroom N, Bathroom N, Garage, etc.). These are the only ones
+    // the agent can add or remove from here, and they sync straight to the
+    // web via POST/DELETE /gallery/tags.
+    final customTags =
+        liveTags.where((t) => !_isDerivedTag(t)).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Custom Tags',
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary(context)),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: _saving ? null : _showAddTagDialog,
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('Add custom tag'),
+              style: TextButton.styleFrom(foregroundColor: AppTheme.brand),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Custom tags sync to the web and can be applied when uploading photos.',
+          style: TextStyle(
+              fontSize: 12, color: AppTheme.textSecondary(context)),
+        ),
+        const SizedBox(height: 8),
+        if (customTags.isEmpty)
+          Text(
+            'No custom tags yet.',
+            style: TextStyle(
+                fontSize: 12, color: AppTheme.textMuted(context)),
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: customTags.map(_tagChip).toList(),
+          ),
+      ],
+    );
+  }
+
+  Widget _tagChip(String tag) {
+    final derived = _isDerivedTag(tag);
+    return Chip(
+      label: Text(tag),
+      backgroundColor: AppTheme.surface2(context),
+      side: BorderSide.none,
+      labelStyle: TextStyle(color: AppTheme.textPrimary(context), fontSize: 12),
+      deleteIcon: derived ? null : const Icon(Icons.close, size: 14),
+      onDeleted: derived ? null : () => _confirmDeleteTag(tag),
+    );
+  }
+
+  Future<void> _showAddTagDialog() async {
+    final controller = TextEditingController();
+    String? errorText;
+    bool busy = false;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setLocal) {
+        return AlertDialog(
+          backgroundColor: AppTheme.surface(context),
+          title: const Text('Add custom tag'),
+          content: TextField(
+            controller: controller,
+            maxLength: 40,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: 'e.g. Sea View',
+              errorText: errorText,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: busy ? null : () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      final input = controller.text.trim();
+                      if (input.isEmpty) {
+                        setLocal(() => errorText = 'Tag cannot be empty');
+                        return;
+                      }
+                      setLocal(() {
+                        busy = true;
+                        errorText = null;
+                      });
+                      try {
+                        final updated = await _api.addGalleryTag(
+                            widget.propertyId, input);
+                        if (!mounted) return;
+                        setState(() => _liveTags = updated);
+                        if (ctx.mounted) Navigator.of(ctx).pop();
+                      } on ApiException catch (e) {
+                        setLocal(() {
+                          busy = false;
+                          errorText = e.statusCode == 422
+                              ? (e.message.toLowerCase().contains('exist')
+                                  ? 'Tag already exists'
+                                  : e.message)
+                              : e.message;
+                        });
+                      } catch (e) {
+                        setLocal(() {
+                          busy = false;
+                          errorText = e.toString();
+                        });
+                      }
+                    },
+              child: busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Text('Add'),
+            ),
+          ],
+        );
+      }),
+    );
+  }
+
+  Future<void> _confirmDeleteTag(String tag) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface(context),
+        title: const Text('Remove tag?'),
+        content: Text(
+            "Remove tag '$tag'? Photos under this tag will become untagged."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style:
+                ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      final updated = await _api.deleteGalleryTag(widget.propertyId, tag);
+      if (!mounted) return;
+      setState(() => _liveTags = updated);
+      // Backend strips the tag from images — refresh property so the
+      // gallery groupings reflect the new untagged bucket.
+      await _loadProperty();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    }
+  }
+
   Widget _gallerySection(String tag, {required bool isLive}) {
     final existing = _existingImages[tag] ?? const <String>[];
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppTheme.surface(context),
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        border: Border.all(color: AppTheme.borderColor(context)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '$tag  ·  ${existing.length}',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textPrimary(context)),
-                ),
-              ),
-              if (isLive)
-                TextButton.icon(
-                  onPressed: _saving
-                      ? null
-                      : () => _openUploadSheet(initialTag: tag),
-                  icon: const Icon(Icons.add_a_photo, size: 14),
-                  label: const Text('Add Photo'),
-                  style: TextButton.styleFrom(
-                      foregroundColor: AppTheme.brand,
-                      padding: const EdgeInsets.symmetric(horizontal: 8)),
-                ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          if (existing.isEmpty)
-            Text(
-              'No photos in this group yet.',
-              style: TextStyle(
-                  fontSize: 12, color: AppTheme.textSecondary(context)),
-            )
-          else
-            SizedBox(
-              height: 90,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: existing.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (_, i) => ClipRRect(
-                  borderRadius: BorderRadius.circular(AppTheme.radius),
-                  child: Image.network(existing[i], width: 120, height: 90,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        width: 120, height: 90, color: AppTheme.darkSurface2,
-                        child: const Icon(Icons.broken_image, color: AppTheme.darkTextMuted),
-                      )),
-                ),
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+            decoration: BoxDecoration(
+              color: AppTheme.surface2(context),
+              borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(AppTheme.radius)),
+              border: Border(
+                bottom: BorderSide(color: AppTheme.borderColor(context)),
               ),
             ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          tag,
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.textPrimary(context)),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppTheme.brand.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '${existing.length}',
+                          style: const TextStyle(
+                              color: AppTheme.brand,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isLive)
+                  TextButton.icon(
+                    onPressed: _saving
+                        ? null
+                        : () => _openUploadSheet(initialTag: tag),
+                    icon: const Icon(Icons.add_a_photo, size: 14),
+                    label: const Text('Add Photo'),
+                    style: TextButton.styleFrom(
+                        foregroundColor: AppTheme.brand,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: const Size(0, 32)),
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: existing.isEmpty
+                ? Text(
+                    'No photos in this group yet.',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary(context)),
+                  )
+                : SizedBox(
+                    height: 90,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: existing.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      itemBuilder: (_, i) => ClipRRect(
+                        borderRadius: BorderRadius.circular(AppTheme.radius),
+                        child: Image.network(existing[i],
+                            width: 120,
+                            height: 90,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                                  width: 120,
+                                  height: 90,
+                                  color: AppTheme.surface2(context),
+                                  child: Icon(Icons.broken_image,
+                                      color: AppTheme.textMuted(context)),
+                                )),
+                      ),
+                    ),
+                  ),
+          ),
         ],
       ),
     );

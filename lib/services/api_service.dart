@@ -10,6 +10,7 @@ import '../models/gallery_tags.dart';
 import '../models/notification_models.dart';
 import '../models/property.dart';
 import '../models/property_options.dart';
+import '../models/property_overview.dart';
 import '../models/space.dart';
 
 class ApiService {
@@ -681,6 +682,111 @@ class ApiService {
     }
 
     throw ApiException(response.statusCode, 'Failed to save spaces');
+  }
+
+  // --- Property Overview ---
+
+  /// 60-second in-memory cache of the overview payload, keyed by property id.
+  /// Expires the moment the TTL is exceeded; pull-to-refresh callers should
+  /// pass [forceRefresh] to bypass it.
+  static final Map<int, ({DateTime fetchedAt, PropertyOverview data})>
+      _overviewCache = {};
+  static const Duration _overviewTtl = Duration(seconds: 60);
+
+  Future<PropertyOverview> getPropertyOverview(int id,
+      {bool forceRefresh = false}) async {
+    if (!forceRefresh) {
+      final cached = _overviewCache[id];
+      if (cached != null &&
+          DateTime.now().difference(cached.fetchedAt) < _overviewTtl) {
+        return cached.data;
+      }
+    }
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/mobile/properties/$id/overview'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final raw = jsonDecode(response.body);
+      final map = raw is Map<String, dynamic>
+          ? (raw['property'] is Map<String, dynamic>
+              ? raw['property'] as Map<String, dynamic>
+              : raw)
+          : <String, dynamic>{};
+      // The backend returns the full property record at the top level with a
+      // sibling `placements` array; if `placements` lives outside `property`
+      // when wrapped, fold it in so the model sees a flat shape.
+      if (raw is Map<String, dynamic> &&
+          raw['placements'] != null &&
+          map['placements'] == null) {
+        map['placements'] = raw['placements'];
+      }
+      final overview = PropertyOverview.fromJson(map);
+      _overviewCache[id] =
+          (fetchedAt: DateTime.now(), data: overview);
+      return overview;
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(403, "You don't have access to this property");
+    }
+    throw ApiException(response.statusCode, 'Failed to load overview');
+  }
+
+  void invalidateOverviewCache(int id) => _overviewCache.remove(id);
+
+  // --- Gallery Tags (custom tag CRUD) ---
+
+  Future<GalleryTagsData> addGalleryTag(int propertyId, String tag) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/mobile/properties/$propertyId/gallery/tags'),
+      headers: await _headers(),
+      body: jsonEncode({'tag': tag}),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return GalleryTagsData.fromJson(
+          Map<String, dynamic>.from(jsonDecode(response.body)));
+    }
+    if (response.statusCode == 422) {
+      String msg = 'Tag is invalid';
+      try {
+        final body = jsonDecode(response.body);
+        if (body is Map) {
+          if (body['message'] is String) {
+            msg = body['message'] as String;
+          } else if (body['errors'] is Map) {
+            final errors = body['errors'] as Map;
+            if (errors['tag'] is List && (errors['tag'] as List).isNotEmpty) {
+              msg = (errors['tag'] as List).first.toString();
+            }
+          }
+        }
+      } catch (_) {}
+      throw ApiException(422, msg);
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(403, "You don't have permission to edit tags");
+    }
+    throw ApiException(response.statusCode, 'Failed to add tag');
+  }
+
+  Future<GalleryTagsData> deleteGalleryTag(int propertyId, String tag) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/mobile/properties/$propertyId/gallery/tags'),
+      headers: await _headers(),
+      body: jsonEncode({'tag': tag}),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      return GalleryTagsData.fromJson(
+          Map<String, dynamic>.from(jsonDecode(response.body)));
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(403, "You don't have permission to edit tags");
+    }
+    throw ApiException(response.statusCode, 'Failed to remove tag');
   }
 
   Future<GalleryTagsData> getGalleryTags(int propertyId) async {

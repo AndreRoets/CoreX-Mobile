@@ -5,6 +5,7 @@ import '../../models/property.dart';
 import '../../providers/property_provider.dart';
 import 'property_create_screen.dart';
 import 'property_edit_screen.dart';
+import 'property_overview_screen.dart';
 
 class PropertyListScreen extends StatefulWidget {
   const PropertyListScreen({super.key});
@@ -115,7 +116,7 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppTheme.darkBackground,
+      backgroundColor: AppTheme.background(context),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
       ),
@@ -272,7 +273,7 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
           label: Text(o),
           selected: isSelected,
           onSelected: (_) => onSelected(isSelected ? null : o),
-          backgroundColor: AppTheme.darkSurface2,
+          backgroundColor: AppTheme.surface2(context),
           selectedColor: AppTheme.brand,
           labelStyle: TextStyle(
             color: isSelected ? Colors.white : AppTheme.textPrimary(context),
@@ -358,16 +359,16 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
                       )
                     : null,
                 filled: true,
-                fillColor: AppTheme.darkSurface,
+                fillColor: AppTheme.surface(context),
                 contentPadding:
                     const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppTheme.radius),
-                  borderSide: BorderSide(color: AppTheme.darkSurface2),
+                  borderSide: BorderSide(color: AppTheme.borderColor(context)),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppTheme.radius),
-                  borderSide: BorderSide(color: AppTheme.darkSurface2),
+                  borderSide: BorderSide(color: AppTheme.borderColor(context)),
                 ),
               ),
             ),
@@ -492,9 +493,16 @@ class _PropertyCard extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(AppTheme.radius),
         onTap: () async {
+          // Listed properties open the read-first Overview; drafts (or
+          // anything without a status set yet) jump straight to Edit so the
+          // agent can finish capturing.
+          final isDraft = (property.status ?? '').toLowerCase() == 'draft' ||
+              (property.status ?? '').isEmpty;
           await Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (_) => PropertyEditScreen(propertyId: property.id),
+              builder: (_) => isDraft
+                  ? PropertyEditScreen(propertyId: property.id)
+                  : PropertyOverviewScreen(propertyId: property.id),
             ),
           );
           if (context.mounted) context.read<PropertyProvider>().fetchProperties();
@@ -509,8 +517,8 @@ class _PropertyCard extends StatelessWidget {
                 child: property.thumbnail != null
                     ? Image.network(property.thumbnail!, width: 72, height: 72,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _placeholder())
-                    : _placeholder(),
+                        errorBuilder: (_, __, ___) => _placeholder(context))
+                    : _placeholder(context),
               ),
               const SizedBox(width: 12),
               // Info
@@ -578,14 +586,14 @@ class _PropertyCard extends StatelessWidget {
     );
   }
 
-  Widget _placeholder() {
+  Widget _placeholder(BuildContext context) {
     return Container(
       width: 72, height: 72,
       decoration: BoxDecoration(
-        color: AppTheme.darkSurface2,
+        color: AppTheme.surface2(context),
         borderRadius: BorderRadius.circular(AppTheme.radius),
       ),
-      child: const Icon(Icons.home, color: AppTheme.darkTextMuted),
+      child: Icon(Icons.home, color: AppTheme.textMuted(context)),
     );
   }
 }
