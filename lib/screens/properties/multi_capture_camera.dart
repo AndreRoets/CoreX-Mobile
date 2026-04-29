@@ -96,80 +96,40 @@ class _MultiCaptureCameraState extends State<MultiCaptureCamera>
         return;
       }
 
-      // Build lens presets from every back-facing physical camera. We probe
-      // each by briefly initialising it so we can read its real zoom range
-      // — that's how we discover an ultrawide (min < 1.0) when the OS
-      // reports it as a separate CameraDescription rather than as sub-1.0
-      // zoom on a logical camera.
-      // Strict back-facing first. Only fall back to non-front cameras if
-      // none are explicitly tagged `back`.
-      var back = _cameras
+      // Real-estate mode: pick the widest back-facing lens available.
+      // Two device shapes:
+      //   1. Phones that expose ultrawide as its own CameraDescription
+      //      (often iPhone — name contains "Ultra"). Pick that directly.
+      //   2. Phones with a single logical back camera whose
+      //      getMinZoomLevel() returns < 1.0 (most modern Android multi-
+      //      cameras). We pick the back camera and call
+      //      setZoomLevel(minZoom) inside _startLens to engage ultrawide.
+      final back = _cameras
           .where((c) => c.lensDirection == CameraLensDirection.back)
           .toList();
-      if (back.isEmpty) {
-        back = _cameras
-            .where((c) => c.lensDirection != CameraLensDirection.front)
-            .toList();
-      }
-      if (back.isEmpty) back = List.of(_cameras);
+      final fallback = _cameras
+          .where((c) => c.lensDirection != CameraLensDirection.front)
+          .toList();
+      final pool = back.isNotEmpty
+          ? back
+          : (fallback.isNotEmpty ? fallback : _cameras);
 
-      // Build lens presets from name heuristics — no pre-probing. Probing
-      // each camera with init/dispose can leave the camera stack in a state
-      // that causes the next CameraController to attach to the wrong lens
-      // (e.g. the front camera) on some devices. Min/max zoom is fetched
-      // lazily per lens after we actually start it.
-      _lensPresets.clear();
-      for (final cam in back) {
-        final n = cam.name.toLowerCase();
-        double assumedMin;
-        double assumedMax;
-        if (n.contains('ultra')) {
-          assumedMin = 0.5;
-          assumedMax = 1.0;
-        } else if (n.contains('tele')) {
-          assumedMin = 1.0;
-          assumedMax = 3.0;
-        } else {
-          assumedMin = 1.0;
-          assumedMax = 1.0;
-        }
-        _lensPresets.add(_LensPreset(
-          camera: cam,
-          minZoom: assumedMin,
-          maxZoom: assumedMax,
-        ));
-      }
-      _assignLensLabels();
+      final ultra = pool.firstWhere(
+        (c) => c.name.toLowerCase().contains('ultra'),
+        orElse: () => pool.first,
+      );
 
-      // Always start on the first back lens labelled "1x" if present;
-      // otherwise the first entry (which is guaranteed back-facing).
-      final wideIdx = _lensPresets.indexWhere((p) => p.label == '1x');
-      _activeLens = wideIdx >= 0 ? wideIdx : 0;
-      await _startLens(_activeLens);
+      _lensPresets
+        ..clear()
+        ..add(_LensPreset(camera: ultra, minZoom: 0.6, maxZoom: 1.0));
+      _activeLens = 0;
+      await _startLens(0);
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _initializing = false;
         _error = 'Camera error: $e';
       });
-    }
-  }
-
-  void _assignLensLabels() {
-    if (_lensPresets.isEmpty) return;
-    final sorted = [..._lensPresets]
-      ..sort((a, b) => a.minZoom.compareTo(b.minZoom));
-    bool wideAssigned = false;
-    for (final p in sorted) {
-      if (p.minZoom < 0.95) {
-        p.label = '${p.minZoom.toStringAsFixed(1)}x';
-      } else if (!wideAssigned) {
-        p.label = '1x';
-        wideAssigned = true;
-      } else {
-        final z = p.maxZoom >= 2.0 ? p.maxZoom : 2.0;
-        p.label = '${z.toInt()}x';
-      }
     }
   }
 
@@ -184,8 +144,11 @@ class _MultiCaptureCameraState extends State<MultiCaptureCamera>
       if (!mounted) return;
       final minZ = await ctrl.getMinZoomLevel();
       final maxZ = await ctrl.getMaxZoomLevel();
-      final restZoom =
-          preset.minZoom < 0.95 ? minZ : 1.0.clamp(minZ, maxZ).toDouble();
+      // Real-estate mode: always sit at the widest available zoom on the
+      // chosen lens. On phones with a logical multi-camera, minZ < 1.0
+      // physically engages the ultrawide; on phones where ultrawide is a
+      // separate CameraDescription we already picked it, so minZ ≈ 1.0.
+      final restZoom = minZ;
 
       try {
         await ctrl.setFlashMode(_flash);
