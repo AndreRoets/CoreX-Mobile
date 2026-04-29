@@ -164,6 +164,7 @@ class _MultiCaptureCameraState extends State<MultiCaptureCamera>
         _currentZoom = restZoom;
       });
       await ctrl.setZoomLevel(restZoom);
+      _rebuildZoomPresetsFromActive();
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -173,9 +174,57 @@ class _MultiCaptureCameraState extends State<MultiCaptureCamera>
     }
   }
 
+  /// Once the active controller is initialised and we know its real
+  /// min/max zoom, build a set of preset chips based on the device's
+  /// actual capabilities. Each preset uses the same CameraDescription —
+  /// only the target zoom differs — so tapping a chip just calls
+  /// setZoomLevel (no restart). On Android logical multi-cameras
+  /// setZoomLevel(< 1.0) physically engages the ultrawide.
+  void _rebuildZoomPresetsFromActive() {
+    if (_lensPresets.isEmpty) return;
+    final cam = _lensPresets[_activeLens].camera;
+    final zooms = <double>{};
+    if (_minZoom < 0.95) zooms.add(_minZoom);
+    zooms.add(1.0.clamp(_minZoom, _maxZoom).toDouble());
+    if (_maxZoom >= 2.0) zooms.add(2.0);
+    if (_maxZoom >= 5.0) zooms.add(5.0);
+    final sorted = zooms.toList()..sort();
+    _lensPresets
+      ..clear()
+      ..addAll(sorted.map((z) => _LensPreset(
+            camera: cam,
+            minZoom: z,
+            maxZoom: z,
+          )));
+    for (final p in _lensPresets) {
+      p.label = p.minZoom < 1.0
+          ? '${p.minZoom.toStringAsFixed(1)}x'
+          : '${p.minZoom.toInt()}x';
+    }
+    // Default to the widest preset (real-estate mode).
+    _activeLens = 0;
+    if (mounted) setState(() {});
+  }
+
   Future<void> _setLens(int index) async {
-    if (!_onFront && index == _activeLens) return;
-    if (_initializing) return;
+    final ctrl = _controller;
+    if (ctrl == null || _initializing) return;
+    if (index == _activeLens && !_onFront) return;
+    final target = _lensPresets[index];
+    // Same camera, just digital zoom — no controller restart needed.
+    if (!_onFront && target.camera == ctrl.description) {
+      try {
+        final z = target.minZoom.clamp(_minZoom, _maxZoom).toDouble();
+        await ctrl.setZoomLevel(z);
+        if (!mounted) return;
+        setState(() {
+          _activeLens = index;
+          _currentZoom = z;
+        });
+      } catch (_) {/* ignore */}
+      return;
+    }
+    // Different camera (front → back, or distinct CameraDescription).
     setState(() => _initializing = true);
     await _startLens(index);
   }
