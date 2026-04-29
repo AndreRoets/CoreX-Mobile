@@ -23,15 +23,16 @@ class MultiCaptureCamera extends StatefulWidget {
 }
 
 class _LensPreset {
+  /// The physical camera this preset uses.
   final CameraDescription camera;
-  final double minZoom;
-  final double maxZoom;
+  /// Target digital zoom to apply on that camera when this preset is selected.
+  final double targetZoom;
   String label;
   _LensPreset({
     required this.camera,
-    required this.minZoom,
-    required this.maxZoom,
-  }) : label = '1x';
+    required this.targetZoom,
+    required this.label,
+  });
 }
 
 class _MultiCaptureCameraState extends State<MultiCaptureCamera>
@@ -53,11 +54,15 @@ class _MultiCaptureCameraState extends State<MultiCaptureCamera>
 
   FlashMode _flash = FlashMode.off;
 
-  // Physical lens presets — one per back-facing camera, labelled with its
-  // effective zoom (e.g. 0.6x ultrawide, 1x wide, 2x tele).
+  // Lens presets — a mix of physical-lens entries (one per back-facing
+  // CameraDescription) AND digital-zoom entries on the active camera.
+  // Tapping a preset either swaps the controller (different camera) or
+  // just calls setZoomLevel (same camera).
   final List<_LensPreset> _lensPresets = [];
   int _activeLens = 0;
   bool _onFront = false;
+  // Cached list of back-facing physical cameras, in their reported order.
+  List<CameraDescription> _backCameras = const [];
 
   @override
   void initState() {
@@ -96,32 +101,33 @@ class _MultiCaptureCameraState extends State<MultiCaptureCamera>
         return;
       }
 
-      // Real-estate mode: pick the widest back-facing lens available.
-      // Two device shapes:
-      //   1. Phones that expose ultrawide as its own CameraDescription
-      //      (often iPhone — name contains "Ultra"). Pick that directly.
-      //   2. Phones with a single logical back camera whose
-      //      getMinZoomLevel() returns < 1.0 (most modern Android multi-
-      //      cameras). We pick the back camera and call
-      //      setZoomLevel(minZoom) inside _startLens to engage ultrawide.
-      final back = _cameras
+      // Build the back-facing pool. Strict back first; fall back to
+      // anything not explicitly front; last resort all cameras.
+      var back = _cameras
           .where((c) => c.lensDirection == CameraLensDirection.back)
           .toList();
-      final fallback = _cameras
-          .where((c) => c.lensDirection != CameraLensDirection.front)
-          .toList();
-      final pool = back.isNotEmpty
-          ? back
-          : (fallback.isNotEmpty ? fallback : _cameras);
+      if (back.isEmpty) {
+        back = _cameras
+            .where((c) => c.lensDirection != CameraLensDirection.front)
+            .toList();
+      }
+      if (back.isEmpty) back = List.of(_cameras);
+      _backCameras = back;
 
-      final ultra = pool.firstWhere(
-        (c) => c.name.toLowerCase().contains('ultra'),
-        orElse: () => pool.first,
-      );
+      // Pick a starting camera. Prefer a name match for "ultra" so we
+      // open at the widest angle on phones that expose ultrawide as its
+      // own CameraDescription (most iPhones, some Hauwei/Honor models).
+      final ultraIdx = back.indexWhere(
+          (c) => c.name.toLowerCase().contains('ultra'));
+      final startIdx = ultraIdx >= 0 ? ultraIdx : 0;
 
       _lensPresets
         ..clear()
-        ..add(_LensPreset(camera: ultra, minZoom: 0.6, maxZoom: 1.0));
+        ..add(_LensPreset(
+          camera: back[startIdx],
+          targetZoom: 1.0,
+          label: '1x',
+        ));
       _activeLens = 0;
       await _startLens(0);
     } catch (e) {
@@ -174,47 +180,99 @@ class _MultiCaptureCameraState extends State<MultiCaptureCamera>
     }
   }
 
-  /// Once the active controller is initialised and we know its real
-  /// min/max zoom, build a set of preset chips based on the device's
-  /// actual capabilities. Each preset uses the same CameraDescription —
-  /// only the target zoom differs — so tapping a chip just calls
-  /// setZoomLevel (no restart). On Android logical multi-cameras
-  /// setZoomLevel(< 1.0) physically engages the ultrawide.
+  /// After the active controller is initialised, rebuild the lens preset
+  /// list to expose every option the user can reach:
+  ///
+  /// 1. Every back-facing physical CameraDescription becomes a chip — so
+  ///    if the device exposes ultrawide as a separate camera (which is
+  ///    why getMinZoomLevel returns 1.0 on the default lens), the user
+  ///    can tap into it directly.
+  /// 2. The active camera's digital zoom range adds extra chips: the
+  ///    sub-1.0 minimum (engages logical-camera ultrawide on phones that
+  ///    use that pattern), 1x, and 2x/5x where supported.
   void _rebuildZoomPresetsFromActive() {
-    if (_lensPresets.isEmpty) return;
-    final cam = _lensPresets[_activeLens].camera;
-    final zooms = <double>{};
-    if (_minZoom < 0.95) zooms.add(_minZoom);
-    zooms.add(1.0.clamp(_minZoom, _maxZoom).toDouble());
-    if (_maxZoom >= 2.0) zooms.add(2.0);
-    if (_maxZoom >= 5.0) zooms.add(5.0);
-    final sorted = zooms.toList()..sort();
+    if (_backCameras.isEmpty) return;
+    final activeCam =
+        _controller?.description ?? _backCameras.first;
+    final newPresets = <_LensPreset>[];
+
+    // Digital sub-1.0 zoom on the active camera (logical-multicam path).
+    if (_minZoom < 0.95) {
+      newPresets.add(_LensPreset(
+        camera: activeCam,
+        targetZoom: _minZoom,
+        label: '${_minZoom.toStringAsFixed(1)}x',
+      ));
+    }
+
+    // One chip per physical back-facing camera.
+    for (var i = 0; i < _backCameras.length; i++) {
+      final cam = _backCameras[i];
+      final n = cam.name.toLowerCase();
+      String label;
+      if (n.contains('ultra')) {
+        label = '0.6x';
+      } else if (n.contains('tele')) {
+        label = '2x';
+      } else if (i == 0) {
+        label = '1x';
+      } else {
+        label = 'L${i + 1}';
+      }
+      newPresets.add(_LensPreset(
+        camera: cam,
+        targetZoom: cam == activeCam ? 1.0.clamp(_minZoom, _maxZoom).toDouble() : 1.0,
+        label: label,
+      ));
+    }
+
+    // Digital zoom extras on the active camera.
+    if (_maxZoom >= 2.0 && activeCam == _backCameras.first) {
+      newPresets.add(_LensPreset(
+        camera: activeCam,
+        targetZoom: 2.0,
+        label: '2x',
+      ));
+    }
+    if (_maxZoom >= 5.0 && activeCam == _backCameras.first) {
+      newPresets.add(_LensPreset(
+        camera: activeCam,
+        targetZoom: 5.0,
+        label: '5x',
+      ));
+    }
+
+    // De-dup by label, keeping order.
+    final seen = <String>{};
+    final deduped = <_LensPreset>[];
+    for (final p in newPresets) {
+      if (seen.add(p.label)) deduped.add(p);
+    }
+
     _lensPresets
       ..clear()
-      ..addAll(sorted.map((z) => _LensPreset(
-            camera: cam,
-            minZoom: z,
-            maxZoom: z,
-          )));
-    for (final p in _lensPresets) {
-      p.label = p.minZoom < 1.0
-          ? '${p.minZoom.toStringAsFixed(1)}x'
-          : '${p.minZoom.toInt()}x';
+      ..addAll(deduped);
+
+    // Set active to the entry that matches the current camera + zoom.
+    int active = _lensPresets.indexWhere((p) =>
+        p.camera == activeCam &&
+        (p.targetZoom - _currentZoom).abs() < 0.05);
+    if (active < 0) {
+      active = _lensPresets.indexWhere((p) => p.camera == activeCam);
     }
-    // Default to the widest preset (real-estate mode).
-    _activeLens = 0;
+    if (active < 0) active = 0;
+    _activeLens = active;
     if (mounted) setState(() {});
   }
 
   Future<void> _setLens(int index) async {
     final ctrl = _controller;
     if (ctrl == null || _initializing) return;
-    if (index == _activeLens && !_onFront) return;
     final target = _lensPresets[index];
-    // Same camera, just digital zoom — no controller restart needed.
+    // Same physical camera — just adjust digital zoom.
     if (!_onFront && target.camera == ctrl.description) {
       try {
-        final z = target.minZoom.clamp(_minZoom, _maxZoom).toDouble();
+        final z = target.targetZoom.clamp(_minZoom, _maxZoom).toDouble();
         await ctrl.setZoomLevel(z);
         if (!mounted) return;
         setState(() {
@@ -224,9 +282,40 @@ class _MultiCaptureCameraState extends State<MultiCaptureCamera>
       } catch (_) {/* ignore */}
       return;
     }
-    // Different camera (front → back, or distinct CameraDescription).
+    // Different physical camera — restart controller on it, then the
+    // post-init rebuild will refresh chips and reset _activeLens.
     setState(() => _initializing = true);
-    await _startLens(index);
+    _controller?.dispose();
+    final newCtrl =
+        CameraController(target.camera, ResolutionPreset.high, enableAudio: false);
+    _controller = newCtrl;
+    try {
+      await newCtrl.initialize();
+      if (!mounted) return;
+      final minZ = await newCtrl.getMinZoomLevel();
+      final maxZ = await newCtrl.getMaxZoomLevel();
+      try {
+        await newCtrl.setFlashMode(_flash);
+      } catch (_) {}
+      // Land at the widest zoom on the new lens (real-estate default).
+      await newCtrl.setZoomLevel(minZ);
+      if (!mounted) return;
+      setState(() {
+        _onFront = false;
+        _initializing = false;
+        _error = null;
+        _minZoom = minZ;
+        _maxZoom = maxZ;
+        _currentZoom = minZ;
+      });
+      _rebuildZoomPresetsFromActive();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _initializing = false;
+        _error = 'Could not switch lens';
+      });
+    }
   }
 
   Future<void> _switchCamera() async {
