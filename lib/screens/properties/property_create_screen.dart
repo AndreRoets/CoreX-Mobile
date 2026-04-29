@@ -30,7 +30,17 @@ class _MissingField {
 /// id, and use it for the rest of the wizard. Subsequent forward moves
 /// from Address/Details PUT to update that same record.
 class PropertyCreateScreen extends StatefulWidget {
-  const PropertyCreateScreen({super.key});
+  /// Optional contact link — when set, the very first POST to
+  /// `/mobile/properties` carries `link_contact_id` + `link_contact_role`
+  /// so the new property is auto-linked to that contact.
+  final int? linkContactId;
+  final String? linkContactRole;
+
+  const PropertyCreateScreen({
+    super.key,
+    this.linkContactId,
+    this.linkContactRole,
+  });
 
   @override
   State<PropertyCreateScreen> createState() => _PropertyCreateScreenState();
@@ -364,6 +374,10 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
     final provider = context.read<PropertyProvider>();
     bool ok;
     if (_propertyId == null) {
+      if (widget.linkContactId != null && widget.linkContactRole != null) {
+        data['link_contact_id'] = widget.linkContactId;
+        data['link_contact_role'] = widget.linkContactRole;
+      }
       final created = await provider.createProperty(data);
       ok = created != null;
       if (created != null && mounted) {

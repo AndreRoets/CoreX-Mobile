@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/env.dart';
+import '../models/contact.dart';
+import '../models/core_match.dart';
 import '../models/dashboard_data.dart';
 import '../models/gallery_tags.dart';
 import '../models/notification_models.dart';
@@ -872,6 +874,280 @@ class ApiService {
     throw ApiException(status, 'Failed to upload image');
   }
 
+  // --- Contacts ---
+
+  Future<List<Contact>> listContacts({String? search, int perPage = 50}) async {
+    final qp = <String, String>{
+      'per_page': '$perPage',
+      if (search != null && search.isNotEmpty) 'search': search,
+    };
+    final uri = Uri.parse('$baseUrl/mobile/contacts').replace(queryParameters: qp);
+    final response = await http.get(uri, headers: await _headers()).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      final list = body is List
+          ? body
+          : (body['data'] ?? body['contacts'] ?? []);
+      return (list as List)
+          .whereType<Map>()
+          .map((e) => Contact.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    throw ApiException(response.statusCode, 'Failed to load contacts');
+  }
+
+  Future<Contact> getContact(int id) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/mobile/contacts/$id'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      final map = body is Map && body['contact'] is Map
+          ? Map<String, dynamic>.from(body['contact'])
+          : Map<String, dynamic>.from(body as Map);
+      return Contact.fromJson(map);
+    }
+    throw ApiException(response.statusCode, 'Failed to load contact');
+  }
+
+  Future<List<ContactType>> getContactOptions() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/mobile/contacts/options'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      final list = body is Map ? (body['contact_types'] as List? ?? []) : [];
+      return list
+          .whereType<Map>()
+          .map((e) => ContactType.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    throw ApiException(response.statusCode, 'Failed to load contact options');
+  }
+
+  Future<Contact> createContact(Map<String, dynamic> body) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/mobile/contacts'),
+      headers: await _headers(),
+      body: jsonEncode(body),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final json = jsonDecode(response.body);
+      final map = json is Map && json['contact'] is Map
+          ? Map<String, dynamic>.from(json['contact'])
+          : Map<String, dynamic>.from(json as Map);
+      return Contact.fromJson(map);
+    }
+    if (response.statusCode == 422) {
+      try {
+        final json = jsonDecode(response.body);
+        if (json is Map && json['duplicate_id'] != null) {
+          final dup = json['duplicate_id'];
+          final dupId = dup is num ? dup.toInt() : int.tryParse(dup.toString()) ?? 0;
+          throw DuplicateContactException(dupId, json['message']?.toString() ?? 'This contact already exists');
+        }
+      } catch (e) {
+        if (e is DuplicateContactException) rethrow;
+      }
+      throw _parseValidationError(response.body);
+    }
+    throw ApiException(response.statusCode, _serverErrorMessage(response.body, 'create'));
+  }
+
+  Future<Contact> updateContact(int id, Map<String, dynamic> body) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/mobile/contacts/$id'),
+      headers: await _headers(),
+      body: jsonEncode(body),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body);
+      final map = json is Map && json['contact'] is Map
+          ? Map<String, dynamic>.from(json['contact'])
+          : Map<String, dynamic>.from(json as Map);
+      return Contact.fromJson(map);
+    }
+    if (response.statusCode == 422) throw _parseValidationError(response.body);
+    throw ApiException(response.statusCode, _serverErrorMessage(response.body, 'update'));
+  }
+
+  Future<Map<String, dynamic>> whatsappContact(int id) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/mobile/contacts/$id/whatsapp'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final body = jsonDecode(response.body);
+      return body is Map<String, dynamic> ? body : <String, dynamic>{};
+    }
+    throw ApiException(response.statusCode, 'Failed to log WhatsApp');
+  }
+
+  Future<ContactMatch> createMatch(int contactId, Map<String, dynamic> body) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/mobile/contacts/$contactId/matches'),
+      headers: await _headers(),
+      body: jsonEncode(body),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final json = jsonDecode(response.body);
+      final map = json is Map && json['match'] is Map
+          ? Map<String, dynamic>.from(json['match'])
+          : Map<String, dynamic>.from(json as Map);
+      return ContactMatch.fromJson(map);
+    }
+    if (response.statusCode == 422) throw _parseValidationError(response.body);
+    throw ApiException(response.statusCode, _serverErrorMessage(response.body, 'create match'));
+  }
+
+  Future<Property> createPropertyForContact(
+      int contactId, String role, Map<String, dynamic> propertyBody) async {
+    final merged = {
+      ...propertyBody,
+      'link_contact_id': contactId,
+      'link_contact_role': role,
+    };
+    return createProperty(merged);
+  }
+
+  // --- Core Matches ---
+
+  Future<List<CoreMatchGroup>> listCoreMatches() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/mobile/core-matches'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      final list = body is Map ? (body['groups'] as List? ?? const []) : const [];
+      return list
+          .whereType<Map>()
+          .map((e) => CoreMatchGroup.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    throw ApiException(response.statusCode, 'Failed to load core matches');
+  }
+
+  Future<CoreMatchDetail> getCoreMatch(int id,
+      {bool showOtherAgents = false}) async {
+    final uri = Uri.parse('$baseUrl/mobile/core-matches/$id').replace(
+      queryParameters: showOtherAgents ? {'show_other_agents': '1'} : null,
+    );
+    final response =
+        await http.get(uri, headers: await _headers()).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      return CoreMatchDetail.fromJson(
+          Map<String, dynamic>.from(jsonDecode(response.body)));
+    }
+    throw ApiException(response.statusCode, 'Failed to load core match');
+  }
+
+  Future<bool> getCoreMatchAllowCrossAgent() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/mobile/core-matches/settings'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      return body is Map && body['allow_cross_agent'] == true;
+    }
+    throw ApiException(response.statusCode, 'Failed to load core match settings');
+  }
+
+  Future<CoreMatch> updateCoreMatch(int id, Map<String, dynamic> body) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/mobile/core-matches/$id'),
+      headers: await _headers(),
+      body: jsonEncode(body),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body);
+      final map = json is Map && json['match'] is Map
+          ? Map<String, dynamic>.from(json['match'])
+          : Map<String, dynamic>.from(json as Map);
+      return CoreMatch.fromJson(map);
+    }
+    if (response.statusCode == 422) throw _parseValidationError(response.body);
+    throw ApiException(response.statusCode, _serverErrorMessage(response.body, 'update match'));
+  }
+
+  Future<void> setCoreMatchStatus(int id, String status) async {
+    final response = await http.patch(
+      Uri.parse('$baseUrl/mobile/core-matches/$id/status'),
+      headers: await _headers(),
+      body: jsonEncode({'status': status}),
+    ).timeout(_timeout);
+
+    if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, 'Failed to update status');
+    }
+  }
+
+  Future<bool> toggleHideMatchProperty(int matchId, int propertyId) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/mobile/core-matches/$matchId/hide/$propertyId'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      if (body is Map && body['hidden'] is bool) return body['hidden'] as bool;
+      return false;
+    }
+    throw ApiException(response.statusCode, 'Failed to toggle visibility');
+  }
+
+  Future<WhatsAppShare> previewMatchWhatsApp(int matchId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/mobile/core-matches/$matchId/share-whatsapp'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      return WhatsAppShare.fromJson(
+          Map<String, dynamic>.from(jsonDecode(response.body)));
+    }
+    throw ApiException(response.statusCode, 'Failed to load WhatsApp preview');
+  }
+
+  Future<WhatsAppShare> sendMatchWhatsApp(int matchId, String message) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/mobile/core-matches/$matchId/share-whatsapp'),
+      headers: await _headers(),
+      body: jsonEncode({'message': message}),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return WhatsAppShare.fromJson(
+          Map<String, dynamic>.from(jsonDecode(response.body)));
+    }
+    throw ApiException(response.statusCode, 'Failed to send WhatsApp');
+  }
+
+  Future<void> deleteCoreMatch(int id) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/mobile/core-matches/$id'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw ApiException(response.statusCode, 'Failed to delete match');
+    }
+  }
+
   // --- Notifications ---
 
   /// Register an FCM/APNs token with the backend so the user receives push.
@@ -1141,4 +1417,11 @@ class ValidationException extends ApiException {
 class AgencyControlledException extends ApiException {
   AgencyControlledException()
       : super(409, 'Your agency manages notification settings centrally.');
+}
+
+/// Server returned 422 with `duplicate_id` from POST /mobile/contacts —
+/// caller should offer to open the existing contact instead of erroring.
+class DuplicateContactException extends ApiException {
+  final int duplicateId;
+  DuplicateContactException(this.duplicateId, String message) : super(422, message);
 }
