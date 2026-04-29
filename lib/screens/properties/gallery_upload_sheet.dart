@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../models/gallery_tags.dart';
 import '../../services/api_service.dart';
 import '../../theme.dart';
+import 'multi_capture_camera.dart';
 
 /// Modal bottom sheet for uploading one or more photos to a property.
 ///
@@ -124,21 +125,10 @@ class _GalleryUploadSheetState extends State<GalleryUploadSheet> {
   }
 
   Future<void> _pickFromCamera() async {
-    // Hand off to the OS camera app via image_picker so the user gets the
-    // full native camera UI: ultrawide (0.6x) / telephoto lens switching,
-    // HDR, Night mode, flash control — whatever the device supports. We
-    // loop so multi-capture still works: after each photo the OS camera
-    // re-launches; the user dismisses to stop.
     try {
-      while (mounted) {
-        final shot = await _picker.pickImage(
-          source: ImageSource.camera,
-          imageQuality: 95,
-          preferredCameraDevice: CameraDevice.rear,
-        );
-        if (shot == null) break;
-        setState(() => _queue.add(File(shot.path)));
-      }
+      final files = await MultiCaptureCamera.open(context);
+      if (files.isEmpty || !mounted) return;
+      setState(() => _queue.addAll(files));
     } catch (_) {
       // user cancelled or camera error, ignore
     }

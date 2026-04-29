@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
@@ -14,6 +15,13 @@ import 'screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Force normal (non-immersive) system UI so the Android home pill /
+  // gesture bar always responds — without this, any screen that ever
+  // entered immersive mode can leave the gesture bar in a stuck state.
+  await SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.edgeToEdge,
+    overlays: SystemUiOverlay.values,
+  );
   await dotenv.load(fileName: '.env');
   await _requestInitialPermissions();
   runApp(const CoreXApp());
