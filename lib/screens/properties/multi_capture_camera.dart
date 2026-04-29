@@ -449,6 +449,12 @@ class _MultiCaptureCameraState extends State<MultiCaptureCamera>
                       '${_captured.length} taken',
                       style: const TextStyle(
                           color: Colors.white70, fontSize: 14),
+                    )
+                  else
+                    Text(
+                      'lenses: ${_backCameras.length} · zoom ${_minZoom.toStringAsFixed(1)}–${_maxZoom.toStringAsFixed(1)}x',
+                      style: const TextStyle(
+                          color: Colors.white38, fontSize: 11),
                     ),
                   const Spacer(),
                   if (_cameras.any(

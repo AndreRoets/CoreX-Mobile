@@ -124,14 +124,29 @@ class _GalleryUploadSheetState extends State<GalleryUploadSheet> {
     }
   }
 
-  Future<void> _pickFromCamera() async {
+  Future<void> _pickFromBurst() async {
     try {
       final files = await MultiCaptureCamera.open(context);
       if (files.isEmpty || !mounted) return;
       setState(() => _queue.addAll(files));
-    } catch (_) {
-      // user cancelled or camera error, ignore
-    }
+    } catch (_) {/* user cancelled, ignore */}
+  }
+
+  /// OS camera app — the only path that can reach the device's ultrawide /
+  /// 0.6x on phones (e.g. Honor Y9A) where Camera2 LEGACY level hides the
+  /// ultrawide from third-party apps. One shot per launch (Android/iOS
+  /// constraint); we loop so the user can take many in sequence.
+  Future<void> _pickFromOsCamera() async {
+    try {
+      while (mounted) {
+        final shot = await _picker.pickImage(
+          source: ImageSource.camera,
+          preferredCameraDevice: CameraDevice.rear,
+        );
+        if (shot == null) break;
+        setState(() => _queue.add(File(shot.path)));
+      }
+    } catch (_) {/* user cancelled, ignore */}
   }
 
   Future<void> _upload() async {
@@ -420,9 +435,24 @@ class _GalleryUploadSheetState extends State<GalleryUploadSheet> {
       children: [
         Expanded(
           child: OutlinedButton.icon(
-            onPressed: _uploading ? null : _pickFromCamera,
+            onPressed: _uploading ? null : _pickFromBurst,
+            icon: const Icon(Icons.burst_mode, size: 18),
+            label: const Text('Burst'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppTheme.brand,
+              side: const BorderSide(color: AppTheme.darkSurface2),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppTheme.radius)),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: _uploading ? null : _pickFromOsCamera,
             icon: const Icon(Icons.photo_camera, size: 18),
-            label: const Text('Camera'),
+            label: const Text('Native'),
             style: OutlinedButton.styleFrom(
               foregroundColor: AppTheme.brand,
               side: const BorderSide(color: AppTheme.darkSurface2),
