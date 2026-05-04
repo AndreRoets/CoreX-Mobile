@@ -1,14 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme.dart';
+import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../services/security_service.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  bool _biometricSupported = false;
+
+  @override
+  void initState() {
+    super.initState();
+    SecurityService.instance.canUseBiometrics().then((v) {
+      if (mounted) setState(() => _biometricSupported = v);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
+    final auth = context.watch<AuthProvider>();
     final isDark = themeProvider.isDark;
 
     return Scaffold(
@@ -44,6 +62,39 @@ class SettingsScreen extends StatelessWidget {
                     activeTrackColor: AppTheme.brand,
                     activeThumbColor: Colors.white,
                     onChanged: (_) => themeProvider.toggle(),
+                  ),
+                  context: context,
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 24),
+            Text(
+              'Security',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary(context),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _SettingsCard(
+              context: context,
+              children: [
+                _SettingsTile(
+                  icon: Icons.fingerprint_rounded,
+                  label: _biometricSupported
+                      ? 'Biometric sign-in'
+                      : 'Biometrics not available',
+                  trailing: Switch.adaptive(
+                    value: auth.biometricEnabled,
+                    activeTrackColor: AppTheme.brand,
+                    activeThumbColor: Colors.white,
+                    onChanged: _biometricSupported
+                        ? (v) => context
+                            .read<AuthProvider>()
+                            .setBiometricEnabled(v)
+                        : null,
                   ),
                   context: context,
                 ),

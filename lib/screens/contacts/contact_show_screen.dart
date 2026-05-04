@@ -462,7 +462,7 @@ class _ContactShowScreenState extends State<ContactShowScreen> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.home_work_rounded,
+                Icon(Icons.home_work_rounded,
                     size: 18, color: AppTheme.brand),
                 const SizedBox(width: 10),
                 Expanded(

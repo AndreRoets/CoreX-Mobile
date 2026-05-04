@@ -468,11 +468,11 @@ class _PropertyOverviewScreenState extends State<PropertyOverviewScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 2),
                           child: Row(
                             children: [
-                              const Icon(Icons.phone,
+                              Icon(Icons.phone,
                                   size: 14, color: AppTheme.brand),
                               const SizedBox(width: 6),
                               Text(c.phone!,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       color: AppTheme.brand,
                                       fontWeight: FontWeight.w500,
                                       fontSize: 13)),
@@ -487,13 +487,13 @@ class _PropertyOverviewScreenState extends State<PropertyOverviewScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 2),
                           child: Row(
                             children: [
-                              const Icon(Icons.email_outlined,
+                              Icon(Icons.email_outlined,
                                   size: 14, color: AppTheme.brand),
                               const SizedBox(width: 6),
                               Flexible(
                                 child: Text(c.email!,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                         color: AppTheme.brand,
                                         fontWeight: FontWeight.w500,
                                         fontSize: 13)),
@@ -557,7 +557,7 @@ class _PropertyOverviewScreenState extends State<PropertyOverviewScreen> {
           padding: const EdgeInsets.all(12),
           child: Row(
             children: [
-              const Icon(Icons.threesixty, color: AppTheme.brand),
+              Icon(Icons.threesixty, color: AppTheme.brand),
               const SizedBox(width: 12),
               Expanded(
                 child: Text('Virtual Tour',

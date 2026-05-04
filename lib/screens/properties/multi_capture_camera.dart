@@ -641,7 +641,7 @@ class _MultiCaptureCameraState extends State<MultiCaptureCamera>
                         ? TextButton(
                             onPressed: () =>
                                 setState(() => _reviewing = true),
-                            child: const Text('Done',
+                            child: Text('Done',
                                 style: TextStyle(
                                     color: AppTheme.brand,
                                     fontWeight: FontWeight.w700,
@@ -672,7 +672,7 @@ class _MultiCaptureCameraState extends State<MultiCaptureCamera>
         actions: [
           TextButton(
             onPressed: _confirm,
-            child: const Text('Confirm',
+            child: Text('Confirm',
                 style: TextStyle(
                     color: AppTheme.brand,
                     fontWeight: FontWeight.w700,

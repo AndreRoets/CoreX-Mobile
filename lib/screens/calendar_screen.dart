@@ -440,7 +440,7 @@ class _AgendaView extends StatelessWidget {
                     Container(
                       width: 8, height: 8,
                       margin: const EdgeInsets.only(right: 8),
-                      decoration: const BoxDecoration(color: AppTheme.brand, shape: BoxShape.circle),
+                      decoration: BoxDecoration(color: AppTheme.brand, shape: BoxShape.circle),
                     ),
                   Text(
                     isToday ? 'Today · ${_formatAgendaDate(date)}' : _formatAgendaDate(date),

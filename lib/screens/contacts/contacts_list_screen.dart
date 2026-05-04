@@ -288,7 +288,7 @@ class _ContactsListScreenState extends State<ContactsListScreen> {
       ),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w600,
           color: AppTheme.brand,

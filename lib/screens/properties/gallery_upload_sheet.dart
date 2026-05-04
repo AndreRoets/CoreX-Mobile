@@ -98,7 +98,7 @@ class _GalleryInfoDialogState extends State<_GalleryInfoDialog> {
         ),
         title: Row(
           children: [
-            const Icon(Icons.info_outline, color: AppTheme.brand),
+            Icon(Icons.info_outline, color: AppTheme.brand),
             const SizedBox(width: 8),
             Expanded(
               child: Text(

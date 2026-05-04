@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme.dart';
 import '../providers/auth_provider.dart';
+import '../providers/branding_provider.dart';
 import '../providers/theme_provider.dart';
 import '../screens/profile_screen.dart';
 import '../screens/settings_screen.dart';
@@ -209,7 +210,10 @@ class _CollapseMenuState extends State<CollapseMenu>
                   icon: Icons.logout_rounded,
                   label: 'Sign Out',
                   iconColor: const Color(0xFFEF4444),
-                  onTap: () => auth.logout(),
+                  onTap: () {
+                    context.read<BrandingProvider>().reset();
+                    auth.logout();
+                  },
                 ),
               ],
             ),

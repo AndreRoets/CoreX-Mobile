@@ -74,7 +74,7 @@ class EventCard extends StatelessWidget {
                         children: [
                           Text(
                             event.allDay ? 'All day' : _formatTime(event.eventDate),
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.brand),
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.brand),
                           ),
                           const SizedBox(width: 8),
                           Container(

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../models/branding.dart';
 import '../providers/dashboard_provider.dart';
 import '../providers/notifications_provider.dart';
 import '../theme.dart';
@@ -34,13 +36,17 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
     });
   }
 
-  void _jumpTo(int i) => setState(() => _index = i);
+  void _jumpTo(int i) {
+    if (i != _index) HapticFeedback.selectionClick();
+    setState(() => _index = i);
+  }
 
   @override
   Widget build(BuildContext context) {
     final inboxTotal = context.select<DashboardProvider, int>(
       (p) => p.data.inboxTotal,
     );
+    final brand = BrandColors.of(context);
 
     return Scaffold(
       backgroundColor: AppTheme.background(context),
@@ -100,7 +106,7 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
           currentIndex: _index,
           onTap: _jumpTo,
           backgroundColor: AppTheme.surface(context),
-          selectedItemColor: AppTheme.brand,
+          selectedItemColor: brand.sidebar,
           unselectedItemColor: AppTheme.textMuted(context),
           type: BottomNavigationBarType.fixed,
           selectedFontSize: 11,

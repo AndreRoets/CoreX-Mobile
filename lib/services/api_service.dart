@@ -13,6 +13,7 @@ import '../models/notification_models.dart';
 import '../models/property.dart';
 import '../models/property_options.dart';
 import '../models/property_overview.dart';
+import '../models/branding.dart';
 import '../models/space.dart';
 
 class ApiService {
@@ -76,6 +77,37 @@ class ApiService {
       return jsonDecode(response.body);
     }
     throw ApiException(response.statusCode, 'Login failed');
+  }
+
+  // --- Branding ---
+
+  /// Pre-login (public). Fetch agency branding by slug.
+  Future<Branding> getBrandingBySlug(String slug) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/v1/branding/$slug'),
+      headers: {'Accept': 'application/json'},
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final block = (body['branding'] as Map?) ?? body;
+      return Branding.fromJson(Map<String, dynamic>.from(block));
+    }
+    throw ApiException(response.statusCode, 'Failed to load branding');
+  }
+
+  /// Post-login. Returns the full logged-user payload (user, agency,
+  /// permissions, server_time, branding).
+  Future<Map<String, dynamic>> getLoggedUser() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/v1/logged-user'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw ApiException(response.statusCode, 'Failed to load logged-user');
   }
 
   // --- Profile ---

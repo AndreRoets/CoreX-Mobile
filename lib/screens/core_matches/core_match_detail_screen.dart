@@ -324,7 +324,7 @@ class _CoreMatchDetailScreenState extends State<CoreMatchDetailScreen> {
               ),
               title: Text(s),
               trailing: selected
-                  ? const Icon(Icons.check_rounded, color: AppTheme.brand)
+                  ? Icon(Icons.check_rounded, color: AppTheme.brand)
                   : null,
               onTap: () {
                 Navigator.pop(ctx);
@@ -447,7 +447,7 @@ class _CoreMatchDetailScreenState extends State<CoreMatchDetailScreen> {
                     color: AppTheme.brand.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.home_outlined,
+                  child: Icon(Icons.home_outlined,
                       color: AppTheme.brand, size: 22),
                 ),
                 const SizedBox(height: 10),
@@ -513,7 +513,7 @@ class _CoreMatchDetailScreenState extends State<CoreMatchDetailScreen> {
                 if (c.phone != null && c.phone!.isNotEmpty)
                   Text(
                     c.phone!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       color: AppTheme.brand,
                       fontWeight: FontWeight.w600,
@@ -737,7 +737,7 @@ class _CoreMatchDetailScreenState extends State<CoreMatchDetailScreen> {
                     if (r.priceDisplay != null && r.priceDisplay!.isNotEmpty)
                       Text(
                         r.priceDisplay!,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                           color: AppTheme.brand,

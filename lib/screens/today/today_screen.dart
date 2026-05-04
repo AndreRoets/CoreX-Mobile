@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
+import '../../models/branding.dart';
 import '../../models/dashboard_data.dart';
 import '../../providers/dashboard_provider.dart';
 import '../../theme.dart';
@@ -60,6 +62,7 @@ class _TodayScreenState extends State<TodayScreen> {
   Widget build(BuildContext context) {
     final dash = context.watch<DashboardProvider>();
     final data = dash.data;
+    final brand = BrandColors.of(context);
 
     final window = _window();
 
@@ -95,7 +98,7 @@ class _TodayScreenState extends State<TodayScreen> {
       child: Stack(
         children: [
           RefreshIndicator(
-            color: AppTheme.brand,
+            color: brand.icon,
             backgroundColor: AppTheme.surface(context),
             onRefresh: () => dash.loadDashboard(),
             child: CustomScrollView(
@@ -142,7 +145,10 @@ class _TodayScreenState extends State<TodayScreen> {
                           item: allDay[i],
                           onComplete: () => _complete(allDay[i]),
                           onReschedule: (d) => _reschedule(allDay[i], d),
-                        ),
+                        ).animate().fadeIn(
+                              duration: 240.ms,
+                              delay: (40 * i).ms,
+                            ).slideY(begin: 0.06, end: 0),
                       ),
                     ),
                     const SliverToBoxAdapter(child: SizedBox(height: 12)),
@@ -158,7 +164,10 @@ class _TodayScreenState extends State<TodayScreen> {
                           item: scheduled[i],
                           onComplete: () => _complete(scheduled[i]),
                           onReschedule: (d) => _reschedule(scheduled[i], d),
-                        ),
+                        ).animate().fadeIn(
+                              duration: 240.ms,
+                              delay: (40 * i).ms,
+                            ).slideY(begin: 0.06, end: 0),
                       ),
                     ),
 
@@ -175,7 +184,10 @@ class _TodayScreenState extends State<TodayScreen> {
                             item: item,
                             onComplete: () => _complete(item),
                             onReschedule: (d) => _reschedule(item, d),
-                          );
+                          ).animate().fadeIn(
+                                duration: 240.ms,
+                                delay: (40 * i).ms,
+                              ).slideY(begin: 0.06, end: 0);
                         },
                       ),
                     ),
@@ -197,8 +209,9 @@ class _TodayScreenState extends State<TodayScreen> {
             child: FloatingActionButton(
               heroTag: 'today_fab',
               onPressed: () => _openQuickAdd(context, mode: 'task'),
-              backgroundColor: AppTheme.brand,
-              child: const Icon(Icons.add, color: Colors.white),
+              backgroundColor: brand.button,
+              foregroundColor: brand.onButton,
+              child: const Icon(Icons.add),
             ),
           ),
         ],
@@ -208,6 +221,7 @@ class _TodayScreenState extends State<TodayScreen> {
 
   Widget _horizonTab(_Horizon h, String label) {
     final active = _horizon == h;
+    final brand = BrandColors.of(context);
     return Expanded(
       child: GestureDetector(
         onTap: () => setState(() => _horizon = h),
@@ -215,7 +229,7 @@ class _TodayScreenState extends State<TodayScreen> {
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(vertical: 9),
           decoration: BoxDecoration(
-            color: active ? AppTheme.brand : Colors.transparent,
+            color: active ? brand.icon : Colors.transparent,
             borderRadius: BorderRadius.circular(AppTheme.radius - 1),
           ),
           child: Center(
@@ -224,7 +238,7 @@ class _TodayScreenState extends State<TodayScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: active ? Colors.white : AppTheme.textSecondary(context),
+                color: active ? brand.onIcon : AppTheme.textSecondary(context),
               ),
             ),
           ),
@@ -395,7 +409,7 @@ class _TimelineRowState extends State<_TimelineRow> {
             label: 'Done',
             alignment: Alignment.centerLeft,
           ),
-          secondaryBackground: const _SwipeBg(
+          secondaryBackground: _SwipeBg(
             colour: AppTheme.brand,
             icon: Icons.schedule,
             label: 'Reschedule',

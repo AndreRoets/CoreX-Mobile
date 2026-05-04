@@ -1000,7 +1000,7 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
                         ),
                         child: Text(
                           '${existing.length}',
-                          style: const TextStyle(
+                          style: TextStyle(
                               color: AppTheme.brand,
                               fontSize: 11,
                               fontWeight: FontWeight.w700),

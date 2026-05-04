@@ -71,7 +71,7 @@ class ProfileScreen extends StatelessWidget {
                 ),
                 child: Text(
                   (user!['role'] as String).toUpperCase(),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: AppTheme.brand,

@@ -226,7 +226,7 @@ class _CoreMatchEditScreenState extends State<CoreMatchEditScreen> {
           ),
           const SizedBox(width: 8),
           IconButton(
-            icon: const Icon(Icons.add_rounded, color: AppTheme.brand),
+            icon: Icon(Icons.add_rounded, color: AppTheme.brand),
             onPressed: onAdd,
           ),
         ],

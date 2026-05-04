@@ -479,7 +479,7 @@ class _ReschedulePanel extends StatelessWidget {
         children: [
           IconButton(
             visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.remove, size: 16, color: AppTheme.brand),
+            icon: Icon(Icons.remove, size: 16, color: AppTheme.brand),
             onPressed: onMinus,
           ),
           SizedBox(
@@ -496,7 +496,7 @@ class _ReschedulePanel extends StatelessWidget {
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.add, size: 16, color: AppTheme.brand),
+            icon: Icon(Icons.add, size: 16, color: AppTheme.brand),
             onPressed: onPlus,
           ),
           const SizedBox(width: 2),

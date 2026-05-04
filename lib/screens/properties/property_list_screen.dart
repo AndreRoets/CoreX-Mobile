@@ -309,7 +309,7 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 5, vertical: 1),
-                    decoration: const BoxDecoration(
+                    decoration: BoxDecoration(
                       color: AppTheme.brand,
                       shape: BoxShape.circle,
                     ),

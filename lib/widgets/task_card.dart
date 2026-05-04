@@ -56,7 +56,12 @@ class TaskCard extends StatelessWidget {
           ],
         ),
       ),
-      child: Material(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          boxShadow: AppTheme.softShadow(context),
+        ),
+        child: Material(
         color: AppTheme.surface(context),
         borderRadius: BorderRadius.circular(AppTheme.radius),
         child: InkWell(
@@ -120,6 +125,7 @@ class TaskCard extends StatelessWidget {
             ),
           ),
         ),
+      ),
       ),
     );
   }

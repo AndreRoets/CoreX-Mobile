@@ -187,7 +187,7 @@ class _NewMatchScreenState extends State<NewMatchScreen> {
               ),
               const SizedBox(width: 8),
               IconButton(
-                icon: const Icon(Icons.add_rounded, color: AppTheme.brand),
+                icon: Icon(Icons.add_rounded, color: AppTheme.brand),
                 onPressed: _addSuburb,
               ),
             ],

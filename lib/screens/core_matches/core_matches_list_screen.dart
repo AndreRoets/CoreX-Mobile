@@ -113,7 +113,7 @@ class _CoreMatchesListScreenState extends State<CoreMatchesListScreen> {
                     color: AppTheme.brand.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.favorite_rounded,
+                  child: Icon(Icons.favorite_rounded,
                       color: AppTheme.brand, size: 26),
                 ),
                 const SizedBox(height: 12),
