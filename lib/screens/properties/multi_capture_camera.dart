@@ -68,6 +68,9 @@ class _MultiCaptureCameraState extends State<MultiCaptureCamera>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+    ]);
     _initCamera();
   }
 
@@ -75,6 +78,7 @@ class _MultiCaptureCameraState extends State<MultiCaptureCamera>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _controller?.dispose();
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
   }
 
@@ -148,6 +152,9 @@ class _MultiCaptureCameraState extends State<MultiCaptureCamera>
     try {
       await ctrl.initialize();
       if (!mounted) return;
+      try {
+        await ctrl.lockCaptureOrientation(DeviceOrientation.portraitUp);
+      } catch (_) {}
       final minZ = await ctrl.getMinZoomLevel();
       final maxZ = await ctrl.getMaxZoomLevel();
       // Real-estate mode: always sit at the widest available zoom on the
@@ -292,6 +299,9 @@ class _MultiCaptureCameraState extends State<MultiCaptureCamera>
     try {
       await newCtrl.initialize();
       if (!mounted) return;
+      try {
+        await newCtrl.lockCaptureOrientation(DeviceOrientation.portraitUp);
+      } catch (_) {}
       final minZ = await newCtrl.getMinZoomLevel();
       final maxZ = await newCtrl.getMaxZoomLevel();
       try {
@@ -331,6 +341,9 @@ class _MultiCaptureCameraState extends State<MultiCaptureCamera>
       _controller = ctrl;
       try {
         await ctrl.initialize();
+        try {
+          await ctrl.lockCaptureOrientation(DeviceOrientation.portraitUp);
+        } catch (_) {}
         final minZ = await ctrl.getMinZoomLevel();
         final maxZ = await ctrl.getMaxZoomLevel();
         if (!mounted) return;

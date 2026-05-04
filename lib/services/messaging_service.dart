@@ -1,17 +1,19 @@
 import 'dart:io' show Platform;
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
+import 'deep_link_router.dart';
 
-/// Wraps push-token registration with the backend.
+/// Wraps FCM push registration + delivery.
 ///
-/// FCM/APNs is **not** wired up in this project yet (no `firebase_core` /
-/// `firebase_messaging` dependency, no `google-services.json`). When those
-/// are added, replace [_obtainToken] with `FirebaseMessaging.instance.getToken()`
-/// and forward `onTokenRefresh` events to [registerCurrentToken]. The rest of
-/// the app — bell badge, notifications screen, overdue widget, settings —
-/// works against the REST API today and will start receiving live pushes the
-/// moment a real token is registered with the server.
+/// Lifecycle:
+///   - `init()` once at app start (after `Firebase.initializeApp()`).
+///   - `onLogin()` after a successful login → fetches the token and POSTs to
+///     `/api/device-tokens`. Re-runs on cold start in `AuthProvider.checkAuth`.
+///   - `onLogout()` before clearing the Sanctum bearer → DELETEs the token.
+///   - `onTokenRefresh` is auto-wired in `init()` so OS rotations are handled.
 class MessagingService {
   MessagingService._();
   static final MessagingService instance = MessagingService._();
@@ -19,30 +21,72 @@ class MessagingService {
   static const _kRegisteredTokenKey = 'fcm_registered_token_v1';
 
   final ApiService _api = ApiService();
+  final FirebaseMessaging _fcm = FirebaseMessaging.instance;
 
-  /// Called from `AuthProvider.login` once a session token exists.
+  /// Set by `main.dart` before runApp so deep-links from cold-start taps know
+  /// where to navigate. Foreground / warm-tap handlers grab the active context
+  /// from this navigator key.
+  GlobalKey<NavigatorState>? navigatorKey;
+
+  bool _initialised = false;
+
+  Future<void> init({GlobalKey<NavigatorState>? navigatorKey}) async {
+    if (_initialised) return;
+    _initialised = true;
+    this.navigatorKey = navigatorKey;
+
+    // iOS / web foreground presentation — show the system banner instead of
+    // suppressing it.
+    await _fcm.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    // Permission prompt on iOS (no-op on Android < 13; handled by
+    // permission_handler in main.dart for Android 13+).
+    await _fcm.requestPermission();
+
+    // Auto-register if the OS rotates the token.
+    _fcm.onTokenRefresh.listen(_registerWithServer);
+
+    // Foreground delivery — show a snackbar instead of a system banner so the
+    // user notices without an OS interruption.
+    FirebaseMessaging.onMessage.listen(_onForegroundMessage);
+
+    // Tap on a notification while app is backgrounded.
+    FirebaseMessaging.onMessageOpenedApp.listen(_onMessageTap);
+
+    // Cold-start tap (app was killed when the push arrived).
+    final initial = await _fcm.getInitialMessage();
+    if (initial != null) {
+      // Defer to the first frame so Navigator is ready.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onMessageTap(initial));
+    }
+  }
+
   Future<void> onLogin() async {
     final token = await _obtainToken();
     if (token == null) return;
     await _registerWithServer(token);
   }
 
-  /// Called from `AuthProvider.logout` before the auth token is cleared.
   Future<void> onLogout() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(_kRegisteredTokenKey);
-    if (token == null) return;
-    try {
-      await _api.revokeDeviceToken(token);
-    } catch (e) {
-      debugPrint('[messaging] revoke failed: $e');
+    if (token != null) {
+      try {
+        await _api.revokeDeviceToken(token);
+      } catch (e) {
+        debugPrint('[messaging] revoke failed: $e');
+      }
+      await prefs.remove(_kRegisteredTokenKey);
     }
-    await prefs.remove(_kRegisteredTokenKey);
-  }
-
-  /// Hook this to FCM `onTokenRefresh` once the SDK is wired.
-  Future<void> registerCurrentToken(String token) async {
-    await _registerWithServer(token);
+    try {
+      await _fcm.deleteToken();
+    } catch (e) {
+      debugPrint('[messaging] deleteToken failed: $e');
+    }
   }
 
   Future<void> _registerWithServer(String token) async {
@@ -59,10 +103,51 @@ class MessagingService {
     }
   }
 
-  /// Stub — replace with `FirebaseMessaging.instance.getToken()`.
   Future<String?> _obtainToken() async {
-    // No FCM SDK present; return null so we skip registration cleanly.
-    return null;
+    try {
+      return await _fcm.getToken();
+    } catch (e) {
+      debugPrint('[messaging] getToken failed: $e');
+      return null;
+    }
+  }
+
+  void _onForegroundMessage(RemoteMessage msg) {
+    final ctx = navigatorKey?.currentContext;
+    if (ctx == null) return;
+    final title = msg.notification?.title ?? msg.data['title']?.toString();
+    final body = msg.notification?.body ?? msg.data['body']?.toString();
+    if (title == null && body == null) return;
+
+    final action = msg.data['action_url']?.toString();
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 5),
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (title != null)
+              Text(title,
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+            if (body != null) Text(body, style: const TextStyle(fontSize: 12)),
+          ],
+        ),
+        action: action != null
+            ? SnackBarAction(
+                label: 'View',
+                onPressed: () => DeepLinkRouter.open(ctx, action),
+              )
+            : null,
+      ),
+    );
+  }
+
+  void _onMessageTap(RemoteMessage msg) {
+    final ctx = navigatorKey?.currentContext;
+    final action = msg.data['action_url']?.toString();
+    if (ctx == null || action == null) return;
+    DeepLinkRouter.open(ctx, action);
   }
 
   String get _platform {

@@ -1,3 +1,4 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -12,6 +13,9 @@ import 'providers/theme_provider.dart';
 import 'screens/home_hub_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/splash_screen.dart';
+import 'services/messaging_service.dart';
+
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +27,12 @@ void main() async {
     overlays: SystemUiOverlay.values,
   );
   await dotenv.load(fileName: '.env');
+  try {
+    await Firebase.initializeApp();
+    await MessagingService.instance.init(navigatorKey: rootNavigatorKey);
+  } catch (e) {
+    debugPrint('[firebase] init failed: $e');
+  }
   await _requestInitialPermissions();
   runApp(const CoreXApp());
 }
@@ -57,6 +67,7 @@ class CoreXApp extends StatelessWidget {
           return MaterialApp(
             title: 'CoreX OS',
             debugShowCheckedModeBanner: false,
+            navigatorKey: rootNavigatorKey,
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
             themeMode: themeProvider.themeMode,
