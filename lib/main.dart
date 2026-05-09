@@ -10,13 +10,17 @@ import 'models/branding.dart';
 import 'theme.dart';
 import 'providers/auth_provider.dart';
 import 'providers/branding_provider.dart';
+import 'providers/client_session_provider.dart';
 import 'providers/dashboard_provider.dart';
 import 'providers/notifications_provider.dart';
 import 'providers/property_provider.dart';
 import 'providers/theme_provider.dart';
+import 'screens/auth/client/client_set_password_screen.dart';
+import 'screens/auth/login_choice_screen.dart';
+import 'screens/client/client_home_screen.dart';
 import 'screens/home_hub_screen.dart';
-import 'screens/login_screen.dart';
 import 'screens/splash_screen.dart';
+import 'services/client_auth_service.dart';
 import 'services/messaging_service.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -71,6 +75,8 @@ class CoreXApp extends StatelessWidget {
             }),
         ),
         ChangeNotifierProvider(create: (_) => AuthProvider()..checkAuth()),
+        ChangeNotifierProvider(
+            create: (_) => ClientSessionProvider()..bootstrap()),
         ChangeNotifierProvider(create: (_) => DashboardProvider()),
         ChangeNotifierProvider(create: (_) => NotificationsProvider()),
         ChangeNotifierProvider(create: (_) => PropertyProvider()),
@@ -173,7 +179,8 @@ class _AppBootstrapState extends State<_AppBootstrap> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    if (!_splashDone || auth.isChecking) {
+    final clientSession = context.watch<ClientSessionProvider>();
+    if (!_splashDone || auth.isChecking || clientSession.isChecking) {
       return SplashScreen(
         onFinished: () => setState(() => _splashDone = true),
       );
@@ -201,10 +208,34 @@ class AuthGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final clientSession = context.watch<ClientSessionProvider>();
+
+    // Client takes precedence: a client signing in on a device that also has
+    // a saved user token (rare but possible) lands on the client portal,
+    // not the agent app.
+    if (clientSession.isLoggedIn) {
+      if (clientSession.passwordMustChange) {
+        // Forced rotation — bounce to set-password before showing home.
+        return FutureBuilder<String?>(
+          future: ClientAuthService().getToken(),
+          builder: (_, snap) {
+            if (!snap.hasData || snap.data == null) {
+              return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()));
+            }
+            return ClientSetPasswordScreen(
+              bearerToken: snap.data!,
+              isFromActivation: false,
+            );
+          },
+        );
+      }
+      return const ClientHomeScreen();
+    }
 
     if (auth.isLoggedIn) {
       return const HomeHubScreen();
     }
-    return const LoginScreen();
+    return const LoginChoiceScreen();
   }
 }

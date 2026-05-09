@@ -82,6 +82,12 @@ class _LoginScreenState extends State<LoginScreen> {
     if (ok && auth.needsBiometricSetupPrompt) {
       await _askEnableBiometrics();
     }
+    // When LoginScreen is pushed on top of LoginChoiceScreen (the new entry
+    // point), AuthGate won't be visible after a successful sign-in until we
+    // pop back to root. Harmless if we're already at the root.
+    if (ok && mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).popUntil((r) => r.isFirst);
+    }
   }
 
   Future<void> _askEnableBiometrics() async {

@@ -15,6 +15,7 @@ import '../models/property_options.dart';
 import '../models/property_overview.dart';
 import '../models/branding.dart';
 import '../models/space.dart';
+import '../models/task_extras.dart';
 
 class ApiService {
   static String get baseUrl => Env.apiBaseUrl;
@@ -381,6 +382,137 @@ class ApiService {
       throw ApiException(403, 'Agency-controlled — only agency admins can change these');
     }
     throw ApiException(response.statusCode, 'Failed to update user settings');
+  }
+
+  // --- Task Notes & Checklist ---
+
+  Future<List<TaskNote>> getTaskNotes(int taskId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/command-center/tasks/$taskId/notes'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      final list = body is Map ? (body['notes'] as List? ?? const []) : const [];
+      return list
+          .whereType<Map>()
+          .map((e) => TaskNote.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    if (response.statusCode == 403) throw ApiException(403, "You don't have access to this task.");
+    throw ApiException(response.statusCode, 'Failed to load notes');
+  }
+
+  Future<TaskNote> createTaskNote(int taskId, String body) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/command-center/tasks/$taskId/notes'),
+      headers: await _headers(),
+      body: jsonEncode({'body': body}),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final json = jsonDecode(response.body);
+      final map = json is Map && json['note'] is Map
+          ? Map<String, dynamic>.from(json['note'])
+          : Map<String, dynamic>.from(json as Map);
+      return TaskNote.fromJson(map);
+    }
+    throw ApiException(response.statusCode, 'Failed to add note');
+  }
+
+  Future<TaskNote> updateTaskNote(int taskId, int noteId, String body) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/command-center/tasks/$taskId/notes/$noteId'),
+      headers: await _headers(),
+      body: jsonEncode({'body': body}),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body);
+      final map = json is Map && json['note'] is Map
+          ? Map<String, dynamic>.from(json['note'])
+          : Map<String, dynamic>.from(json as Map);
+      return TaskNote.fromJson(map);
+    }
+    throw ApiException(response.statusCode, 'Failed to update note');
+  }
+
+  Future<void> deleteTaskNote(int taskId, int noteId) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/command-center/tasks/$taskId/notes/$noteId'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw ApiException(response.statusCode, 'Failed to delete note');
+    }
+  }
+
+  Future<List<ChecklistItem>> getTaskChecklist(int taskId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/command-center/tasks/$taskId/checklist'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      final list = body is Map ? (body['items'] as List? ?? const []) : const [];
+      return list
+          .whereType<Map>()
+          .map((e) => ChecklistItem.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    if (response.statusCode == 403) throw ApiException(403, "You don't have access to this task.");
+    throw ApiException(response.statusCode, 'Failed to load checklist');
+  }
+
+  Future<ChecklistItem> createChecklistItem(int taskId, String text) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/command-center/tasks/$taskId/checklist'),
+      headers: await _headers(),
+      body: jsonEncode({'text': text}),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final json = jsonDecode(response.body);
+      final map = json is Map && json['item'] is Map
+          ? Map<String, dynamic>.from(json['item'])
+          : Map<String, dynamic>.from(json as Map);
+      return ChecklistItem.fromJson(map);
+    }
+    throw ApiException(response.statusCode, 'Failed to add item');
+  }
+
+  Future<ChecklistItem> updateChecklistItem(int taskId, String itemId, {bool? done, String? text}) async {
+    final response = await http.patch(
+      Uri.parse('$baseUrl/command-center/tasks/$taskId/checklist/$itemId'),
+      headers: await _headers(),
+      body: jsonEncode({
+        if (done != null) 'done': done,
+        if (text != null) 'text': text,
+      }),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body);
+      final map = json is Map && json['item'] is Map
+          ? Map<String, dynamic>.from(json['item'])
+          : Map<String, dynamic>.from(json as Map);
+      return ChecklistItem.fromJson(map);
+    }
+    throw ApiException(response.statusCode, 'Failed to update item');
+  }
+
+  Future<void> deleteChecklistItem(int taskId, String itemId) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/command-center/tasks/$taskId/checklist/$itemId'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw ApiException(response.statusCode, 'Failed to delete item');
+    }
   }
 
   // --- Calendar Events ---

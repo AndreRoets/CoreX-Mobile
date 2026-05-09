@@ -1,0 +1,324 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:http/http.dart' as http;
+
+import '../config/env.dart';
+import '../models/client_models.dart';
+import 'api_service.dart' show ApiException;
+
+// Wraps every client-side endpoint. The session token lives in
+// flutter_secure_storage (Keychain / KeyStore). The activation token is held
+// in memory by the caller — never written to disk.
+class ClientAuthService {
+  static const _tokenKey = 'client_auth_token';
+  static const _lastPathKey = 'last_login_path'; // 'user' | 'client'
+
+  static String get _baseUrl => Env.apiBaseUrl; // ends in /api
+  static const Duration _timeout = Duration(seconds: 15);
+
+  static const FlutterSecureStorage _storage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
+
+  // -------------------- Token helpers --------------------
+
+  Future<String?> getToken() => _storage.read(key: _tokenKey);
+  Future<void> saveToken(String token) =>
+      _storage.write(key: _tokenKey, value: token);
+  Future<void> clearToken() => _storage.delete(key: _tokenKey);
+
+  Future<String?> getLastPath() => _storage.read(key: _lastPathKey);
+  Future<void> setLastPath(String path) =>
+      _storage.write(key: _lastPathKey, value: path);
+
+  Future<Map<String, String>> _authHeaders([String? overrideToken]) async {
+    final token = overrideToken ?? await getToken();
+    return {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
+  }
+
+  Map<String, String> get _publicHeaders => {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      };
+
+  // -------------------- Endpoints --------------------
+
+  Future<ClientLookupResult> lookup(String email) async {
+    final res = await http
+        .post(
+          Uri.parse('$_baseUrl/v1/client-auth/lookup'),
+          headers: _publicHeaders,
+          body: jsonEncode({'email': email}),
+        )
+        .timeout(_timeout);
+
+    if (res.statusCode == 200) {
+      return ClientLookupResult.fromJson(
+          Map<String, dynamic>.from(jsonDecode(res.body)));
+    }
+    throw _toException(res, 'Lookup failed');
+  }
+
+  /// Sends an OTP to the client. 429 → caller should toast a wait message.
+  Future<int> sendOtp(String email) async {
+    final res = await http
+        .post(
+          Uri.parse('$_baseUrl/v1/client-auth/otp/send'),
+          headers: _publicHeaders,
+          body: jsonEncode({'email': email}),
+        )
+        .timeout(_timeout);
+
+    if (res.statusCode == 200) {
+      final body = jsonDecode(res.body);
+      if (body is Map && body['expires_in_min'] is num) {
+        return (body['expires_in_min'] as num).toInt();
+      }
+      return 10;
+    }
+    throw _toException(res, 'Could not send code');
+  }
+
+  /// Returns the short-lived activation token (hold in memory only).
+  Future<String> verifyOtp(String email, String code) async {
+    final res = await http
+        .post(
+          Uri.parse('$_baseUrl/v1/client-auth/otp/verify'),
+          headers: _publicHeaders,
+          body: jsonEncode({'email': email, 'code': code}),
+        )
+        .timeout(_timeout);
+
+    if (res.statusCode == 200) {
+      final body = jsonDecode(res.body);
+      if (body is Map && body['activation_token'] is String) {
+        return body['activation_token'] as String;
+      }
+      throw ApiException(500, 'Server returned no activation token');
+    }
+    if (res.statusCode == 422) {
+      throw ApiException(422, 'Invalid or expired code');
+    }
+    throw _toException(res, 'Could not verify code');
+  }
+
+  /// Sets a fresh password using either the activation token (first time) or
+  /// the long-lived session token (forced rotation). Returns the new session.
+  Future<ClientLoginResponse> setPassword({
+    required String bearer,
+    required String password,
+    required String passwordConfirmation,
+    required String deviceName,
+  }) async {
+    final res = await http
+        .post(
+          Uri.parse('$_baseUrl/v1/client-auth/password/set'),
+          headers: await _authHeaders(bearer),
+          body: jsonEncode({
+            'password': password,
+            'password_confirmation': passwordConfirmation,
+            'device_name': deviceName,
+          }),
+        )
+        .timeout(_timeout);
+
+    if (res.statusCode == 200 || res.statusCode == 201) {
+      return ClientLoginResponse.fromJson(
+          Map<String, dynamic>.from(jsonDecode(res.body)));
+    }
+    throw _toException(res, 'Could not set password');
+  }
+
+  Future<ClientLoginResponse> login({
+    required String email,
+    required String password,
+    required String deviceName,
+  }) async {
+    final res = await http
+        .post(
+          Uri.parse('$_baseUrl/v1/client-auth/login'),
+          headers: _publicHeaders,
+          body: jsonEncode({
+            'email': email,
+            'password': password,
+            'device_name': deviceName,
+          }),
+        )
+        .timeout(_timeout);
+
+    if (res.statusCode == 200) {
+      return ClientLoginResponse.fromJson(
+          Map<String, dynamic>.from(jsonDecode(res.body)));
+    }
+    if (res.statusCode == 422) {
+      throw ApiException(422, 'Invalid credentials');
+    }
+    throw _toException(res, 'Login failed');
+  }
+
+  Future<String> forgotPassword(String email) async {
+    final res = await http
+        .post(
+          Uri.parse('$_baseUrl/v1/client-auth/password/forgot'),
+          headers: _publicHeaders,
+          body: jsonEncode({'email': email}),
+        )
+        .timeout(_timeout);
+
+    if (res.statusCode == 200) {
+      final body = jsonDecode(res.body);
+      if (body is Map && body['message'] is String) {
+        return body['message'] as String;
+      }
+      return 'Code sent';
+    }
+    if (res.statusCode == 422) {
+      // Includes the agent-managed-login case — surface the server message.
+      String msg = 'Could not start recovery';
+      try {
+        final body = jsonDecode(res.body);
+        if (body is Map && body['message'] is String) {
+          msg = body['message'] as String;
+        }
+      } catch (_) {}
+      throw ApiException(422, msg);
+    }
+    throw _toException(res, 'Could not start recovery');
+  }
+
+  Future<void> changePassword({
+    required String currentPassword,
+    required String password,
+    required String passwordConfirmation,
+  }) async {
+    final res = await http
+        .post(
+          Uri.parse('$_baseUrl/v1/client-auth/password/change'),
+          headers: await _authHeaders(),
+          body: jsonEncode({
+            'current_password': currentPassword,
+            'password': password,
+            'password_confirmation': passwordConfirmation,
+          }),
+        )
+        .timeout(_timeout);
+
+    if (res.statusCode == 200 || res.statusCode == 204) return;
+    throw _toException(res, 'Could not change password');
+  }
+
+  Future<({ClientProfile client, List<ClientAgency> agencies})> selectAgency({
+    required int agencyId,
+    required bool lock,
+    required bool favourite,
+  }) async {
+    final res = await http
+        .post(
+          Uri.parse('$_baseUrl/v1/client-auth/agency/select'),
+          headers: await _authHeaders(),
+          body: jsonEncode({
+            'agency_id': agencyId,
+            'lock': lock,
+            'favourite': favourite,
+          }),
+        )
+        .timeout(_timeout);
+
+    if (res.statusCode == 200) {
+      final body = Map<String, dynamic>.from(jsonDecode(res.body));
+      return (
+        client: ClientProfile.fromJson(
+            Map<String, dynamic>.from(body['client'] as Map)),
+        agencies: (body['agencies'] as List? ?? const [])
+            .whereType<Map>()
+            .map((e) => ClientAgency.fromJson(Map<String, dynamic>.from(e)))
+            .toList(),
+      );
+    }
+    throw _toException(res, 'Could not switch agency');
+  }
+
+  Future<({ClientProfile client, List<ClientAgency> agencies, ClientContact? contact})>
+      me() async {
+    final res = await http
+        .get(
+          Uri.parse('$_baseUrl/v1/client/me'),
+          headers: await _authHeaders(),
+        )
+        .timeout(_timeout);
+
+    if (res.statusCode == 200) {
+      final body = Map<String, dynamic>.from(jsonDecode(res.body));
+      final contactRaw = body['contact'];
+      return (
+        client: ClientProfile.fromJson(
+            Map<String, dynamic>.from(body['client'] as Map)),
+        agencies: (body['agencies'] as List? ?? const [])
+            .whereType<Map>()
+            .map((e) => ClientAgency.fromJson(Map<String, dynamic>.from(e)))
+            .toList(),
+        contact: contactRaw is Map
+            ? ClientContact.fromJson(Map<String, dynamic>.from(contactRaw))
+            : null,
+      );
+    }
+    throw _toException(res, 'Could not load profile');
+  }
+
+  Future<({int agencyId, List<ClientMatch> matches})> matches() async {
+    final res = await http
+        .get(
+          Uri.parse('$_baseUrl/v1/client/matches'),
+          headers: await _authHeaders(),
+        )
+        .timeout(_timeout);
+
+    if (res.statusCode == 200) {
+      final body = Map<String, dynamic>.from(jsonDecode(res.body));
+      return (
+        agencyId: (body['agency_id'] as num?)?.toInt() ?? 0,
+        matches: (body['matches'] as List? ?? const [])
+            .whereType<Map>()
+            .map((e) => ClientMatch.fromJson(Map<String, dynamic>.from(e)))
+            .toList(),
+      );
+    }
+    throw _toException(res, 'Could not load matches');
+  }
+
+  Future<void> logout() async {
+    final token = await getToken();
+    if (token == null) return;
+    try {
+      await http
+          .post(
+            Uri.parse('$_baseUrl/v1/client-auth/logout'),
+            headers: await _authHeaders(token),
+          )
+          .timeout(_timeout);
+    } on SocketException {
+      // Network down — token will be cleared locally regardless.
+    } catch (_) {
+      // Ignore — local sign-out must still succeed.
+    }
+  }
+
+  // -------------------- Errors --------------------
+
+  ApiException _toException(http.Response res, String fallback) {
+    String message = fallback;
+    try {
+      final body = jsonDecode(res.body);
+      if (body is Map && body['message'] is String) {
+        message = body['message'] as String;
+      }
+    } catch (_) {}
+    return ApiException(res.statusCode, message);
+  }
+}

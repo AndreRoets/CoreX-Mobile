@@ -5,6 +5,7 @@ import '../providers/dashboard_provider.dart';
 import '../models/dashboard_data.dart';
 import '../widgets/task_card.dart';
 import 'shared/quick_add_sheet.dart';
+import 'tasks/task_detail_screen.dart';
 
 class TasksScreen extends StatefulWidget {
   final bool embedded;
@@ -188,89 +189,8 @@ class _TasksScreenState extends State<TasksScreen> {
   }
 
   void _showTaskDetail(BuildContext context, CommandTask task) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: BoxDecoration(
-          color: AppTheme.surface(context),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewPadding.bottom),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(top: 12, bottom: 16), decoration: BoxDecoration(color: AppTheme.textMuted(context), borderRadius: BorderRadius.circular(2)))),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Text(task.title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.textPrimary(context))),
-            ),
-            if (task.propertyAddress != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-                child: Text(task.propertyAddress!, style: TextStyle(fontSize: 13, color: AppTheme.textSecondary(context))),
-              ),
-            if (task.description != null && task.description!.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                child: Text(task.description!, style: TextStyle(fontSize: 13, color: AppTheme.textSecondary(context))),
-              ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-              child: Row(
-                children: [
-                  if (task.status != 'done') ...[
-                    Expanded(
-                      child: _ActionButton(
-                        label: 'Complete',
-                        color: const Color(0xFF22c55e),
-                        onTap: () {
-                          context.read<DashboardProvider>().completeTask(task.id);
-                          Navigator.pop(context);
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _ActionButton(
-                        label: "Didn't Happen",
-                        color: const Color(0xFF6b7280),
-                        onTap: () {
-                          context.read<DashboardProvider>().resolveTask(task.id, resolution: 'did_not_happen');
-                          Navigator.pop(context);
-                        },
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ActionButton extends StatelessWidget {
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-  const _ActionButton({required this.label, required this.color, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(AppTheme.radius),
-        ),
-        child: Text(label, textAlign: TextAlign.center, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: color)),
-      ),
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => TaskDetailScreen(task: task)),
     );
   }
 }
