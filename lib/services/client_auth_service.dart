@@ -135,6 +135,53 @@ class ClientAuthService {
     throw _toException(res, 'Could not set password');
   }
 
+  Future<AgentQrAgent> agentQrPreview(String slug) async {
+    final res = await http
+        .get(
+          Uri.parse('$_baseUrl/v1/client-auth/agent-qr/$slug'),
+          headers: _publicHeaders,
+        )
+        .timeout(_timeout);
+    if (res.statusCode == 200) {
+      final body = Map<String, dynamic>.from(jsonDecode(res.body));
+      final raw = body['agent'] is Map ? body['agent'] : body;
+      return AgentQrAgent.fromJson(Map<String, dynamic>.from(raw as Map));
+    }
+    throw _toException(res, 'Agent QR not found');
+  }
+
+  Future<AgentQrRegisterResponse> agentQrRegister({
+    required String slug,
+    required String firstName,
+    required String lastName,
+    required String phone,
+    required String email,
+    required String password,
+    required String passwordConfirmation,
+    required String deviceName,
+  }) async {
+    final res = await http
+        .post(
+          Uri.parse('$_baseUrl/v1/client-auth/agent-qr/$slug/register'),
+          headers: _publicHeaders,
+          body: jsonEncode({
+            'first_name': firstName,
+            'last_name': lastName,
+            if (phone.isNotEmpty) 'phone': phone,
+            'email': email,
+            'password': password,
+            'password_confirmation': passwordConfirmation,
+            'device_name': deviceName,
+          }),
+        )
+        .timeout(_timeout);
+    if (res.statusCode == 200 || res.statusCode == 201) {
+      return AgentQrRegisterResponse.fromJson(
+          Map<String, dynamic>.from(jsonDecode(res.body)));
+    }
+    throw _toException(res, 'Could not sign up');
+  }
+
   Future<ClientLoginResponse> login({
     required String email,
     required String password,
@@ -290,6 +337,117 @@ class ClientAuthService {
       );
     }
     throw _toException(res, 'Could not load matches');
+  }
+
+  // -------------------- Client matches / properties --------------------
+
+  Future<ClientMatchDetail> matchDetail(int matchId) async {
+    final res = await http
+        .get(
+          Uri.parse('$_baseUrl/v1/client/matches/$matchId'),
+          headers: await _authHeaders(),
+        )
+        .timeout(_timeout);
+    if (res.statusCode == 200) {
+      return ClientMatchDetail.fromJson(
+          Map<String, dynamic>.from(jsonDecode(res.body)));
+    }
+    throw _toException(res, 'Could not load match');
+  }
+
+  Future<ClientMatch> createMatch(ClientMatchInput input) async {
+    final res = await http
+        .post(
+          Uri.parse('$_baseUrl/v1/client/matches'),
+          headers: await _authHeaders(),
+          body: jsonEncode(input.toJson()),
+        )
+        .timeout(_timeout);
+    if (res.statusCode == 200 || res.statusCode == 201) {
+      final body = Map<String, dynamic>.from(jsonDecode(res.body));
+      final raw = body['match'] is Map ? body['match'] : body;
+      return ClientMatch.fromJson(Map<String, dynamic>.from(raw as Map));
+    }
+    throw _toException(res, 'Could not create match');
+  }
+
+  Future<ClientMatch> updateMatch(int matchId, ClientMatchInput input) async {
+    final res = await http
+        .put(
+          Uri.parse('$_baseUrl/v1/client/matches/$matchId'),
+          headers: await _authHeaders(),
+          body: jsonEncode(input.toJson()),
+        )
+        .timeout(_timeout);
+    if (res.statusCode == 200) {
+      final body = Map<String, dynamic>.from(jsonDecode(res.body));
+      final raw = body['match'] is Map ? body['match'] : body;
+      return ClientMatch.fromJson(Map<String, dynamic>.from(raw as Map));
+    }
+    throw _toException(res, 'Could not update match');
+  }
+
+  Future<void> postFeedback({
+    required int matchId,
+    required int propertyId,
+    required String reaction,
+    String? note,
+  }) async {
+    final res = await http
+        .post(
+          Uri.parse(
+              '$_baseUrl/v1/client/matches/$matchId/feedback/$propertyId'),
+          headers: await _authHeaders(),
+          body: jsonEncode({
+            'reaction': reaction,
+            if (note != null && note.isNotEmpty) 'note': note,
+          }),
+        )
+        .timeout(_timeout);
+    if (res.statusCode == 200 || res.statusCode == 201) return;
+    throw _toException(res, 'Could not save feedback');
+  }
+
+  /// Fire-and-forget view ping. Errors are swallowed.
+  Future<void> postView({required int matchId, required int propertyId}) async {
+    try {
+      await http
+          .post(
+            Uri.parse('$_baseUrl/v1/client/matches/$matchId/view/$propertyId'),
+            headers: await _authHeaders(),
+          )
+          .timeout(_timeout);
+    } catch (_) {}
+  }
+
+  Future<ClientPropertyDetail> property(int propertyId) async {
+    final res = await http
+        .get(
+          Uri.parse('$_baseUrl/v1/client/properties/$propertyId'),
+          headers: await _authHeaders(),
+        )
+        .timeout(_timeout);
+    if (res.statusCode == 200) {
+      final body = Map<String, dynamic>.from(jsonDecode(res.body));
+      final raw = body['property'] is Map ? body['property'] : body;
+      return ClientPropertyDetail.fromJson(
+          Map<String, dynamic>.from(raw as Map));
+    }
+    throw _toException(res, 'Could not load property');
+  }
+
+  Future<ClientMatchOptions> matchOptions() async {
+    final res = await http
+        .get(
+          Uri.parse('$_baseUrl/v1/client/match-options'),
+          headers: await _authHeaders(),
+        )
+        .timeout(_timeout);
+    if (res.statusCode == 200) {
+      return ClientMatchOptions.fromJson(
+          Map<String, dynamic>.from(jsonDecode(res.body)));
+    }
+    throw _toException(res, 'Could not load options');
   }
 
   Future<void> logout() async {

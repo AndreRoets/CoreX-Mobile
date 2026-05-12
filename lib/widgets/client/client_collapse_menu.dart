@@ -1,21 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../theme.dart';
-import '../providers/auth_provider.dart';
-import '../providers/branding_provider.dart';
-import '../providers/theme_provider.dart';
-import '../screens/my_agent_qr_screen.dart';
-import '../screens/profile_screen.dart';
-import '../screens/settings_screen.dart';
 
-class CollapseMenu extends StatefulWidget {
-  const CollapseMenu({super.key});
+import '../../providers/client_session_provider.dart';
+import '../../providers/theme_provider.dart';
+import '../../screens/auth/client/client_agency_picker_screen.dart';
+import '../../screens/client/client_settings_screen.dart';
+import '../../theme.dart';
+
+class ClientCollapseMenu extends StatefulWidget {
+  const ClientCollapseMenu({super.key});
 
   @override
-  State<CollapseMenu> createState() => _CollapseMenuState();
+  State<ClientCollapseMenu> createState() => _ClientCollapseMenuState();
 }
 
-class _CollapseMenuState extends State<CollapseMenu>
+class _ClientCollapseMenuState extends State<ClientCollapseMenu>
     with SingleTickerProviderStateMixin {
   bool _isOpen = false;
   late final AnimationController _controller;
@@ -48,17 +47,25 @@ class _CollapseMenuState extends State<CollapseMenu>
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
+    final session = context.watch<ClientSessionProvider>();
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = themeProvider.isDark;
 
+    final name = session.contact?.fullName.isNotEmpty == true
+        ? session.contact!.fullName
+        : (session.client?.email ?? 'Client');
+    final email = session.client?.email ?? '';
+    final agency = session.currentAgency;
+    final canSwitch = session.agencies.length > 1 &&
+        session.client?.lockedToAgencyId == null;
+
     return Column(
       children: [
-        // Menu trigger bar
         GestureDetector(
           onTap: _toggle,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             child: Row(
               children: [
                 AnimatedRotation(
@@ -71,37 +78,46 @@ class _CollapseMenuState extends State<CollapseMenu>
                   ),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  'CoreX OS',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary(context),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: canSwitch
+                        ? () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    const ClientAgencyPickerScreen(
+                                        initialPick: false),
+                              ),
+                            )
+                        : null,
+                    behavior: HitTestBehavior.opaque,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            agency?.name ?? 'CoreX',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.textPrimary(context),
+                            ),
+                          ),
+                        ),
+                        if (canSwitch)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: Icon(
+                              Icons.expand_more,
+                              size: 20,
+                              color: AppTheme.textPrimary(context),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-                const Spacer(),
-                // My QR Code button — opens the agent's QR screen directly.
-                IconButton(
-                  tooltip: 'My QR Code',
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 34, minHeight: 34),
-                  icon: Icon(
-                    Icons.qr_code_2_rounded,
-                    size: 24,
-                    color: AppTheme.textPrimary(context),
-                  ),
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const MyAgentQrScreen(),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(width: 8),
-                // User avatar
                 Container(
                   width: 34,
                   height: 34,
@@ -111,7 +127,7 @@ class _CollapseMenuState extends State<CollapseMenu>
                   ),
                   child: Center(
                     child: Text(
-                      _initials(auth.userName),
+                      _initials(name),
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -124,8 +140,6 @@ class _CollapseMenuState extends State<CollapseMenu>
             ),
           ),
         ),
-
-        // Expandable menu content
         SizeTransition(
           sizeFactor: _animation,
           child: Container(
@@ -137,40 +151,35 @@ class _CollapseMenuState extends State<CollapseMenu>
             ),
             child: Column(
               children: [
-                // Profile
                 _MenuItem(
                   icon: Icons.person_rounded,
-                  label: auth.userName,
-                  subtitle: auth.user?['email'] ?? '',
-                  onTap: () {
-                    _toggle();
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const ProfileScreen()),
-                    );
-                  },
+                  label: name,
+                  subtitle: email,
+                  onTap: _toggle,
                 ),
                 Divider(height: 1, color: AppTheme.borderColor(context)),
-
-                // Settings
                 _MenuItem(
                   icon: Icons.settings_rounded,
                   label: 'Settings',
                   onTap: () {
                     _toggle();
                     Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const ClientSettingsScreen(),
+                      ),
                     );
                   },
                 ),
                 Divider(height: 1, color: AppTheme.borderColor(context)),
-
-                // Theme toggle
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
                   child: Row(
                     children: [
                       Icon(
-                        isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+                        isDark
+                            ? Icons.dark_mode_rounded
+                            : Icons.light_mode_rounded,
                         size: 20,
                         color: AppTheme.brand,
                       ),
@@ -194,7 +203,8 @@ class _CollapseMenuState extends State<CollapseMenu>
                           decoration: BoxDecoration(
                             color: isDark
                                 ? AppTheme.brand
-                                : AppTheme.darkTextMuted.withValues(alpha: 0.3),
+                                : AppTheme.darkTextMuted
+                                    .withValues(alpha: 0.3),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: AnimatedAlign(
@@ -226,15 +236,13 @@ class _CollapseMenuState extends State<CollapseMenu>
                   ),
                 ),
                 Divider(height: 1, color: AppTheme.borderColor(context)),
-
-                // Logout
                 _MenuItem(
                   icon: Icons.logout_rounded,
                   label: 'Sign Out',
                   iconColor: const Color(0xFFEF4444),
                   onTap: () {
-                    context.read<BrandingProvider>().reset();
-                    auth.logout();
+                    _toggle();
+                    session.signOut();
                   },
                 ),
               ],
@@ -247,7 +255,7 @@ class _CollapseMenuState extends State<CollapseMenu>
 
   String _initials(String name) {
     final parts = name.trim().split(' ');
-    if (parts.length >= 2) {
+    if (parts.length >= 2 && parts.first.isNotEmpty && parts.last.isNotEmpty) {
       return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
     }
     return name.isNotEmpty ? name[0].toUpperCase() : '?';

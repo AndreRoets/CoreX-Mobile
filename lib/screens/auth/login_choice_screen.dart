@@ -6,6 +6,7 @@ import '../../providers/branding_provider.dart';
 import '../../services/client_auth_service.dart';
 import '../../theme.dart';
 import '../login_screen.dart';
+import 'client/client_agent_qr_scanner_screen.dart';
 import 'client/client_email_screen.dart';
 
 // Top-level entry: two centered buttons — User vs Client. Picking one
@@ -74,6 +75,15 @@ class _LoginChoiceScreenState extends State<LoginChoiceScreen> {
                   label: 'Client',
                   icon: Icons.person_outline,
                   onPressed: () => _go('client', const ClientEmailScreen()),
+                ),
+                const SizedBox(height: 16),
+                _ChoiceButton(
+                  label: 'Scan agent QR',
+                  icon: Icons.qr_code_scanner,
+                  onPressed: () => _go(
+                    'client',
+                    const ClientAgentQrScannerScreen(),
+                  ),
                 ),
               ],
             ),

@@ -111,6 +111,20 @@ class ApiService {
     throw ApiException(response.statusCode, 'Failed to load logged-user');
   }
 
+  // --- Agent QR ---
+
+  Future<Map<String, dynamic>> getMyAgentQr() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/me/agent-qr'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      return Map<String, dynamic>.from(jsonDecode(response.body));
+    }
+    throw ApiException(response.statusCode, 'Failed to load agent QR');
+  }
+
   // --- Profile ---
 
   Future<Map<String, dynamic>> getProfile() async {

@@ -153,65 +153,434 @@ class ClientLoginResponse {
       );
 }
 
-class ClientMatchResultThumb {
+class ClientFeedbackSummary {
+  final int interested;
+  final int notInterested;
+  final int saved;
+
+  const ClientFeedbackSummary({
+    this.interested = 0,
+    this.notInterested = 0,
+    this.saved = 0,
+  });
+
+  factory ClientFeedbackSummary.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const ClientFeedbackSummary();
+    return ClientFeedbackSummary(
+      interested: _asInt(json['interested']) ?? 0,
+      notInterested: _asInt(json['not_interested']) ?? 0,
+      saved: _asInt(json['saved']) ?? 0,
+    );
+  }
+}
+
+class ClientMatch {
+  final int id;
+  final String? name;
+  final String status;
+  final String? listingType;
+  final String? createdAt;
+  final String? updatedAt;
+  final String? lastEngagedAt;
+  final ClientFeedbackSummary feedbackSummary;
+
+  // Filter fields (present on detail; mostly null on list)
+  final String? category;
+  final String? propertyType;
+  final num? priceMin;
+  final num? priceMax;
+  final int? bedsMin;
+  final int? bathsMin;
+  final int? garagesMin;
+  final String? suburb;
+  final List<String> suburbs;
+  final List<String> mustHaveFeatures;
+  final String? notes;
+
+  ClientMatch({
+    required this.id,
+    this.name,
+    required this.status,
+    this.listingType,
+    this.createdAt,
+    this.updatedAt,
+    this.lastEngagedAt,
+    this.feedbackSummary = const ClientFeedbackSummary(),
+    this.category,
+    this.propertyType,
+    this.priceMin,
+    this.priceMax,
+    this.bedsMin,
+    this.bathsMin,
+    this.garagesMin,
+    this.suburb,
+    this.suburbs = const [],
+    this.mustHaveFeatures = const [],
+    this.notes,
+  });
+
+  factory ClientMatch.fromJson(Map<String, dynamic> json) => ClientMatch(
+        id: (json['id'] as num).toInt(),
+        name: json['name']?.toString(),
+        status: json['status']?.toString() ?? '',
+        listingType: json['listing_type']?.toString(),
+        createdAt: json['created_at']?.toString(),
+        updatedAt: json['updated_at']?.toString(),
+        lastEngagedAt: json['last_engaged_at']?.toString(),
+        feedbackSummary: ClientFeedbackSummary.fromJson(
+          json['feedback_summary'] is Map
+              ? Map<String, dynamic>.from(json['feedback_summary'] as Map)
+              : null,
+        ),
+        category: json['category']?.toString(),
+        propertyType: json['property_type']?.toString(),
+        priceMin: json['price_min'] is num ? json['price_min'] as num : null,
+        priceMax: json['price_max'] is num ? json['price_max'] as num : null,
+        bedsMin: _asInt(json['beds_min']),
+        bathsMin: _asInt(json['baths_min']),
+        garagesMin: _asInt(json['garages_min']),
+        suburb: json['suburb']?.toString(),
+        suburbs: (json['suburbs'] as List? ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+        mustHaveFeatures: (json['must_have_features'] as List? ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+        notes: json['notes']?.toString(),
+      );
+}
+
+class ClientMatchResult {
   final int id;
   final String address;
   final String? suburb;
   final int? beds;
   final int? baths;
+  final int? garages;
   final num? price;
+  final String? priceDisplay;
   final String? thumbnail;
+  final int? matchScore;
+  final bool hidden;
+  final String? reaction; // 'interested' | 'not_interested' | 'saved' | null
+  final String? reactionNote;
 
-  ClientMatchResultThumb({
+  ClientMatchResult({
     required this.id,
     required this.address,
     this.suburb,
     this.beds,
     this.baths,
+    this.garages,
     this.price,
+    this.priceDisplay,
     this.thumbnail,
+    this.matchScore,
+    this.hidden = false,
+    this.reaction,
+    this.reactionNote,
   });
 
-  factory ClientMatchResultThumb.fromJson(Map<String, dynamic> json) =>
-      ClientMatchResultThumb(
+  ClientMatchResult copyWith({
+    String? reaction,
+    String? reactionNote,
+    bool clearReactionNote = false,
+  }) =>
+      ClientMatchResult(
+        id: id,
+        address: address,
+        suburb: suburb,
+        beds: beds,
+        baths: baths,
+        garages: garages,
+        price: price,
+        priceDisplay: priceDisplay,
+        thumbnail: thumbnail,
+        matchScore: matchScore,
+        hidden: hidden,
+        reaction: reaction ?? this.reaction,
+        reactionNote:
+            clearReactionNote ? null : (reactionNote ?? this.reactionNote),
+      );
+
+  factory ClientMatchResult.fromJson(Map<String, dynamic> json) =>
+      ClientMatchResult(
         id: (json['id'] as num).toInt(),
         address: json['address']?.toString() ?? '',
         suburb: json['suburb']?.toString(),
         beds: _asInt(json['beds']),
         baths: _asInt(json['baths']),
+        garages: _asInt(json['garages']),
         price: json['price'] is num ? json['price'] as num : null,
+        priceDisplay: json['price_display']?.toString(),
         thumbnail: json['thumbnail']?.toString(),
+        matchScore: _asInt(json['match_score']),
+        hidden: json['hidden'] == true,
+        reaction: json['reaction']?.toString(),
+        reactionNote: json['reaction_note']?.toString(),
       );
 }
 
-class ClientMatch {
-  final int id;
-  final String status;
-  final String? listingType;
-  final String? createdAt;
-  final int resultCount;
-  final List<ClientMatchResultThumb> results;
+class ClientMatchDetail {
+  final ClientMatch match;
+  final List<ClientMatchResult> results;
 
-  ClientMatch({
-    required this.id,
-    required this.status,
-    this.listingType,
-    this.createdAt,
-    required this.resultCount,
-    required this.results,
-  });
+  ClientMatchDetail({required this.match, required this.results});
 
-  factory ClientMatch.fromJson(Map<String, dynamic> json) => ClientMatch(
-        id: (json['id'] as num).toInt(),
-        status: json['status']?.toString() ?? '',
-        listingType: json['listing_type']?.toString(),
-        createdAt: json['created_at']?.toString(),
-        resultCount: _asInt(json['result_count']) ?? 0,
+  factory ClientMatchDetail.fromJson(Map<String, dynamic> json) =>
+      ClientMatchDetail(
+        match: ClientMatch.fromJson(
+            Map<String, dynamic>.from(json['match'] as Map)),
         results: (json['results'] as List? ?? const [])
             .whereType<Map>()
-            .map((e) => ClientMatchResultThumb.fromJson(
-                Map<String, dynamic>.from(e)))
+            .map((e) =>
+                ClientMatchResult.fromJson(Map<String, dynamic>.from(e)))
             .toList(),
+      );
+}
+
+class ClientPropertyAgent {
+  final String? name;
+  final String? phone;
+  final String? email;
+  ClientPropertyAgent({this.name, this.phone, this.email});
+  factory ClientPropertyAgent.fromJson(Map<String, dynamic> json) =>
+      ClientPropertyAgent(
+        name: json['name']?.toString(),
+        phone: json['phone']?.toString(),
+        email: json['email']?.toString(),
+      );
+}
+
+class ClientPropertyDetail {
+  final int id;
+  final String? title;
+  final String? address;
+  final String? suburb;
+  final int? beds;
+  final int? baths;
+  final int? garages;
+  final int? parking;
+  final num? floorSize;
+  final num? erfSize;
+  final String? propertyType;
+  final String? category;
+  final String? listingType;
+  final String? status;
+  final num? price;
+  final String? priceDisplay;
+  final String? description;
+  final List<String> features;
+  final List<String> images;
+  final String? thumbnail;
+  final ClientPropertyAgent? agent;
+  final String? branch;
+  final String? webPreviewUrl;
+
+  ClientPropertyDetail({
+    required this.id,
+    this.title,
+    this.address,
+    this.suburb,
+    this.beds,
+    this.baths,
+    this.garages,
+    this.parking,
+    this.floorSize,
+    this.erfSize,
+    this.propertyType,
+    this.category,
+    this.listingType,
+    this.status,
+    this.price,
+    this.priceDisplay,
+    this.description,
+    this.features = const [],
+    this.images = const [],
+    this.thumbnail,
+    this.agent,
+    this.branch,
+    this.webPreviewUrl,
+  });
+
+  factory ClientPropertyDetail.fromJson(Map<String, dynamic> json) =>
+      ClientPropertyDetail(
+        id: (json['id'] as num).toInt(),
+        title: json['title']?.toString(),
+        address: json['address']?.toString(),
+        suburb: json['suburb']?.toString(),
+        beds: _asInt(json['beds']),
+        baths: _asInt(json['baths']),
+        garages: _asInt(json['garages']),
+        parking: _asInt(json['parking']),
+        floorSize: json['floor_size'] is num ? json['floor_size'] as num : null,
+        erfSize: json['erf_size'] is num ? json['erf_size'] as num : null,
+        propertyType: json['property_type']?.toString(),
+        category: json['category']?.toString(),
+        listingType: json['listing_type']?.toString(),
+        status: json['status']?.toString(),
+        price: json['price'] is num ? json['price'] as num : null,
+        priceDisplay: json['price_display']?.toString(),
+        description: json['description']?.toString(),
+        features: (json['features'] as List? ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+        images: (json['images'] as List? ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+        thumbnail: json['thumbnail']?.toString(),
+        agent: json['agent'] is Map
+            ? ClientPropertyAgent.fromJson(
+                Map<String, dynamic>.from(json['agent'] as Map))
+            : null,
+        branch: json['branch']?.toString(),
+        webPreviewUrl: json['web_preview_url']?.toString(),
+      );
+}
+
+class ClientMatchOptions {
+  final List<String> listingTypes;
+  final List<String> propertyTypes;
+  final List<String> categories;
+  final List<String> suburbs;
+
+  ClientMatchOptions({
+    this.listingTypes = const [],
+    this.propertyTypes = const [],
+    this.categories = const [],
+    this.suburbs = const [],
+  });
+
+  factory ClientMatchOptions.fromJson(Map<String, dynamic> json) =>
+      ClientMatchOptions(
+        listingTypes: (json['listing_types'] as List? ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+        propertyTypes: (json['property_types'] as List? ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+        categories: (json['categories'] as List? ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+        suburbs: (json['suburbs'] as List? ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+      );
+}
+
+class ClientMatchInput {
+  final String? name;
+  final String? listingType;
+  final String? category;
+  final String? propertyType;
+  final num? priceMin;
+  final num? priceMax;
+  final int? bedsMin;
+  final int? bathsMin;
+  final int? garagesMin;
+  final String? suburb;
+  final List<String> suburbs;
+  final List<String> mustHaveFeatures;
+  final String? notes;
+
+  const ClientMatchInput({
+    this.name,
+    this.listingType,
+    this.category,
+    this.propertyType,
+    this.priceMin,
+    this.priceMax,
+    this.bedsMin,
+    this.bathsMin,
+    this.garagesMin,
+    this.suburb,
+    this.suburbs = const [],
+    this.mustHaveFeatures = const [],
+    this.notes,
+  });
+
+  Map<String, dynamic> toJson() => {
+        if (name != null) 'name': name,
+        if (listingType != null) 'listing_type': listingType,
+        if (category != null) 'category': category,
+        if (propertyType != null) 'property_type': propertyType,
+        if (priceMin != null) 'price_min': priceMin,
+        if (priceMax != null) 'price_max': priceMax,
+        if (bedsMin != null) 'beds_min': bedsMin,
+        if (bathsMin != null) 'baths_min': bathsMin,
+        if (garagesMin != null) 'garages_min': garagesMin,
+        if (suburb != null) 'suburb': suburb,
+        'suburbs': suburbs,
+        'must_have_features': mustHaveFeatures,
+        if (notes != null) 'notes': notes,
+      };
+}
+
+class AgentQrAgency {
+  final int id;
+  final String name;
+  final String slug;
+  AgentQrAgency({required this.id, required this.name, required this.slug});
+  factory AgentQrAgency.fromJson(Map<String, dynamic> json) => AgentQrAgency(
+        id: (json['id'] as num).toInt(),
+        name: json['name']?.toString() ?? '',
+        slug: json['slug']?.toString() ?? '',
+      );
+}
+
+class AgentQrAgent {
+  final String firstName;
+  final String lastName;
+  final String fullName;
+  final String? photoUrl;
+  final AgentQrAgency? agency;
+
+  AgentQrAgent({
+    required this.firstName,
+    required this.lastName,
+    required this.fullName,
+    this.photoUrl,
+    this.agency,
+  });
+
+  factory AgentQrAgent.fromJson(Map<String, dynamic> json) => AgentQrAgent(
+        firstName: json['first_name']?.toString() ?? '',
+        lastName: json['last_name']?.toString() ?? '',
+        fullName: json['full_name']?.toString() ?? '',
+        photoUrl: json['photo_url']?.toString(),
+        agency: json['agency'] is Map
+            ? AgentQrAgency.fromJson(
+                Map<String, dynamic>.from(json['agency'] as Map))
+            : null,
+      );
+}
+
+class AgentQrRegisterResponse {
+  final bool existing;
+  final String token;
+  final String? message;
+  final AgentQrAgent agent;
+  final AgentQrAgency? agency;
+
+  AgentQrRegisterResponse({
+    required this.existing,
+    required this.token,
+    this.message,
+    required this.agent,
+    this.agency,
+  });
+
+  factory AgentQrRegisterResponse.fromJson(Map<String, dynamic> json) =>
+      AgentQrRegisterResponse(
+        existing: json['existing'] == true,
+        token: json['token']?.toString() ?? '',
+        message: json['message']?.toString(),
+        agent: AgentQrAgent.fromJson(
+            Map<String, dynamic>.from(json['agent'] as Map)),
+        agency: json['agency'] is Map
+            ? AgentQrAgency.fromJson(
+                Map<String, dynamic>.from(json['agency'] as Map))
+            : null,
       );
 }
 
