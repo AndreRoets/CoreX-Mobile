@@ -22,6 +22,7 @@ import 'screens/home_hub_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/client_auth_service.dart';
 import 'services/messaging_service.dart';
+import 'services/security_service.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -135,6 +136,10 @@ class _InactivityGateState extends State<_InactivityGate>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Lock immediately when the app is backgrounded/inactive — re-entry must
     // pass the login or biometric prompt again.
+    // Suppress lock-on-lifecycle while a system biometric/credential prompt
+    // is showing — the prompt itself fires inactive/paused, which would
+    // otherwise re-lock the session mid-authentication.
+    if (SecurityService.isAuthenticating) return;
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.hidden) {

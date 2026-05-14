@@ -1,120 +1,20 @@
-/// Cockpit data returned by `GET /api/command-center/dashboard`.
-///
-/// The same endpoint feeds the Today tab and the Inbox tab — one round-trip.
-/// Inbox rendering reads the `inbox*` fields; legacy Today agenda reads
-/// `todayEvents`/`myTasks`.
-class DashboardData {
-  final int mtdPoints;
-  final int monthlyTarget;
-  final TaskSummary taskSummary;
-  final PropertyHealthSummary propHealthSummary;
-  final List<CalendarEvent> todayEvents;
-  final List<CalendarEvent> overdueEvents;
-  final List<CommandTask> myTasks;
-  final List<CommandTask> overdueTasks;
-  final List<PropertyHealth> propsNeedingAttention;
-  final List<CandidateDoc> candidateDocs;
-  final AgentScorecard? scorecard;
-  final int totalOverdue;
+/// One attendee on a calendar event, with their RSVP response.
+/// Server emits `attendees: [{ user_id, name, response }, ...]` under
+/// `GET /command-center/calendar/{id}` and the range fetch.
+class EventAttendee {
+  final int? userId;
+  final String name;
+  /// `accepted` | `tentative` | `declined` | `pending`
+  final String response;
 
-  // Cockpit inbox — concatenate in this order (urgency).
-  final List<CommandTask> inboxOverdueTasks;
-  final List<CalendarEvent> inboxOverdueEvents;
-  final List<CandidateDoc> inboxCandidateDocs;
-  final int inboxTotal;
+  const EventAttendee({this.userId, this.name = '', this.response = 'pending'});
 
-  DashboardData({
-    this.mtdPoints = 0,
-    this.monthlyTarget = 300,
-    this.taskSummary = const TaskSummary(),
-    this.propHealthSummary = const PropertyHealthSummary(),
-    this.todayEvents = const [],
-    this.overdueEvents = const [],
-    this.myTasks = const [],
-    this.overdueTasks = const [],
-    this.propsNeedingAttention = const [],
-    this.candidateDocs = const [],
-    this.scorecard,
-    this.totalOverdue = 0,
-    this.inboxOverdueTasks = const [],
-    this.inboxOverdueEvents = const [],
-    this.inboxCandidateDocs = const [],
-    this.inboxTotal = 0,
-  });
-
-  factory DashboardData.fromJson(Map<String, dynamic> json) {
-    return DashboardData(
-      mtdPoints: json['mtd_points'] ?? 0,
-      monthlyTarget: json['monthly_target'] ?? 300,
-      taskSummary: TaskSummary.fromJson(json['task_summary'] ?? {}),
-      propHealthSummary:
-          PropertyHealthSummary.fromJson(json['prop_health_summary'] ?? {}),
-      todayEvents: (json['today_events'] as List? ?? [])
-          .map((e) => CalendarEvent.fromJson(e))
-          .toList(),
-      overdueEvents: (json['overdue_events'] as List? ?? [])
-          .map((e) => CalendarEvent.fromJson(e))
-          .toList(),
-      myTasks: (json['my_tasks'] as List? ?? [])
-          .map((e) => CommandTask.fromJson(e))
-          .toList(),
-      overdueTasks: (json['overdue_tasks'] as List? ?? [])
-          .map((e) => CommandTask.fromJson(e))
-          .toList(),
-      propsNeedingAttention: (json['props_needing_attention'] as List? ?? [])
-          .map((e) => PropertyHealth.fromJson(e))
-          .toList(),
-      candidateDocs: (json['candidate_docs'] as List? ?? [])
-          .map((e) => CandidateDoc.fromJson(e))
-          .toList(),
-      scorecard: json['scorecard'] != null
-          ? AgentScorecard.fromJson(json['scorecard'])
-          : null,
-      totalOverdue: json['total_overdue'] ?? 0,
-      inboxOverdueTasks: (json['inbox_overdue_tasks'] as List? ?? [])
-          .map((e) => CommandTask.fromJson(e))
-          .toList(),
-      inboxOverdueEvents: (json['inbox_overdue_events'] as List? ?? [])
-          .map((e) => CalendarEvent.fromJson(e))
-          .toList(),
-      inboxCandidateDocs: (json['inbox_candidate_docs'] as List? ?? [])
-          .map((e) => CandidateDoc.fromJson(e))
-          .toList(),
-      inboxTotal: json['inbox_total'] ?? 0,
-    );
-  }
-}
-
-class TaskSummary {
-  final int today;
-  final int overdue;
-  final int thisWeek;
-  final int open;
-
-  const TaskSummary({this.today = 0, this.overdue = 0, this.thisWeek = 0, this.open = 0});
-
-  factory TaskSummary.fromJson(Map<String, dynamic> json) {
-    return TaskSummary(
-      today: json['today'] ?? 0,
-      overdue: json['overdue'] ?? 0,
-      thisWeek: json['this_week'] ?? json['thisWeek'] ?? 0,
-      open: json['open'] ?? 0,
-    );
-  }
-}
-
-class PropertyHealthSummary {
-  final int critical;
-  final int attention;
-  final int good;
-
-  const PropertyHealthSummary({this.critical = 0, this.attention = 0, this.good = 0});
-
-  factory PropertyHealthSummary.fromJson(Map<String, dynamic> json) {
-    return PropertyHealthSummary(
-      critical: json['critical'] ?? 0,
-      attention: json['attention'] ?? 0,
-      good: json['good'] ?? 0,
+  factory EventAttendee.fromJson(Map<String, dynamic> json) {
+    return EventAttendee(
+      userId: (json['user_id'] as num?)?.toInt() ??
+          (json['id'] as num?)?.toInt(),
+      name: (json['name'] ?? json['user']?['name'] ?? '').toString(),
+      response: (json['response'] ?? json['status'] ?? 'pending').toString(),
     );
   }
 }
@@ -139,6 +39,14 @@ class CalendarEvent {
   final String? pillarTag; // server-supplied: 'property' | 'deal' | 'contact' | null
   final bool sendReminder;
   final String? description;
+  // Extended fields for the rich event detail sheet (Calendar screen). These
+  // fields are permissively parsed from the same payload — if the server
+  // doesn't include them they stay null/empty rather than failing the parse.
+  final String? location;
+  final int? eventClassId;
+  final String? eventClassName;
+  final String? createdByName;
+  final List<EventAttendee> attendees;
 
   CalendarEvent({
     required this.id,
@@ -160,6 +68,11 @@ class CalendarEvent {
     this.pillarTag,
     this.sendReminder = true,
     this.description,
+    this.location,
+    this.eventClassId,
+    this.eventClassName,
+    this.createdByName,
+    this.attendees = const [],
   });
 
   bool get isOverdue =>
@@ -183,19 +96,38 @@ class CalendarEvent {
   }
 
   factory CalendarEvent.fromJson(Map<String, dynamic> json) {
+    final ec = json['event_class'];
+    final ecMap = ec is Map ? Map<String, dynamic>.from(ec) : null;
+    final attendeesRaw = json['attendees'];
+    final attendees = attendeesRaw is List
+        ? attendeesRaw
+            .whereType<Map>()
+            .map((e) => EventAttendee.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : const <EventAttendee>[];
+
+    // Spec uses `starts_at`/`ends_at`; legacy server uses `event_date`/`end_date`.
+    // Accept both so the range endpoint and legacy endpoint can share the model.
+    final startsRaw = json['starts_at'] ?? json['event_date'] ?? '';
+    final endsRaw = json['ends_at'] ?? json['end_date'];
+
     return CalendarEvent(
       id: json['id'] ?? 0,
       title: json['title'] ?? '',
       eventType: json['event_type'] ?? 'manual',
       category: json['category'],
-      eventDate: DateTime.tryParse(json['event_date'] ?? '') ?? DateTime.now(),
-      endDate: json['end_date'] != null ? DateTime.tryParse(json['end_date']) : null,
+      eventDate: DateTime.tryParse(startsRaw.toString()) ?? DateTime.now(),
+      endDate: endsRaw == null ? null : DateTime.tryParse(endsRaw.toString()),
       allDay: json['all_day'] == true || json['all_day'] == 1,
       priority: json['priority'] ?? 'normal',
       status: json['status'] ?? 'pending',
       resolution: json['resolution'],
       resolutionNote: json['resolution_note'],
-      colour: json['colour'] ?? _typeColour(json['event_type']),
+      colour: (ecMap?['color'] ??
+              json['colour'] ??
+              json['color'] ??
+              _typeColour(json['event_type']))
+          .toString(),
       propertyId: json['property_id'],
       contactId: json['contact_id'],
       propertyAddress: json['property']?['display_address'] ?? json['property_address'],
@@ -203,6 +135,14 @@ class CalendarEvent {
       pillarTag: json['pillar_tag'],
       sendReminder: json['send_reminder'] == true || json['send_reminder'] == 1,
       description: json['description'],
+      location: json['location']?.toString(),
+      eventClassId: (ecMap?['id'] as num?)?.toInt() ??
+          (json['event_class_id'] as num?)?.toInt(),
+      eventClassName:
+          (ecMap?['name'] ?? json['event_class_name'])?.toString(),
+      createdByName: (json['created_by']?['name'] ?? json['created_by_name'])
+          ?.toString(),
+      attendees: attendees,
     );
   }
 
@@ -319,117 +259,51 @@ class CommandTask {
   }
 }
 
-class PropertyHealth {
-  final int score;
-  final String grade;
-  final List<HealthFactor> factors;
-  final int? propertyId;
-  final String? propertyAddress;
-  final String? agentName;
-
-  PropertyHealth({
-    required this.score,
-    required this.grade,
-    this.factors = const [],
-    this.propertyId,
-    this.propertyAddress,
-    this.agentName,
-  });
-
-  factory PropertyHealth.fromJson(Map<String, dynamic> json) {
-    return PropertyHealth(
-      score: json['score'] ?? 0,
-      grade: json['grade'] ?? 'attention',
-      factors: (json['factors'] as List? ?? []).map((f) => HealthFactor.fromJson(f)).toList(),
-      propertyId: json['property']?['id'] ?? json['property_id'],
-      propertyAddress: json['property']?['display_address'] ?? json['property_address'],
-      agentName: json['property']?['agent']?['name'],
-    );
-  }
-}
-
-class HealthFactor {
-  final String label;
-  final int penalty;
+/// A calendar invitation from another user. Fed by
+/// `GET /api/command-center/calendar/invitations`.
+class CalendarInvitation {
+  final int id;
+  final int eventId;
+  /// `pending` | `accepted` | `tentative` | `declined`
   final String status;
-
-  HealthFactor({required this.label, this.penalty = 0, this.status = ''});
-
-  factory HealthFactor.fromJson(Map<String, dynamic> json) {
-    return HealthFactor(
-      label: json['label'] ?? '',
-      penalty: json['penalty'] ?? 0,
-      status: json['status'] ?? '',
-    );
-  }
-}
-
-class CandidateDoc {
-  final int? id;
-  final int? documentId;
-  final String documentName;
-  final String creatorName;
-  final String status;
-  final String? reviewUrl;
+  final String? inviterName;
   final DateTime? createdAt;
+  final DateTime? responseAt;
+  final DateTime? acknowledgedAt;
+  final CalendarEvent? event;
+  final List<CalendarEvent> liveConflicts;
 
-  CandidateDoc({
-    this.id,
-    this.documentId,
-    this.documentName = '',
-    this.creatorName = '',
-    this.status = '',
-    this.reviewUrl,
+  CalendarInvitation({
+    required this.id,
+    required this.eventId,
+    this.status = 'pending',
+    this.inviterName,
     this.createdAt,
+    this.responseAt,
+    this.acknowledgedAt,
+    this.event,
+    this.liveConflicts = const [],
   });
 
-  factory CandidateDoc.fromJson(Map<String, dynamic> json) {
-    return CandidateDoc(
-      id: json['id'],
-      documentId: json['document_id'] ?? json['document']?['id'],
-      documentName: json['document']?['name'] ?? json['document_name'] ?? '',
-      creatorName: json['creator']?['name'] ?? json['creator_name'] ?? '',
-      status: json['status'] ?? '',
-      reviewUrl: json['review_url'],
+  bool get hasConflicts => liveConflicts.isNotEmpty;
+
+  factory CalendarInvitation.fromJson(Map<String, dynamic> json) {
+    return CalendarInvitation(
+      id: json['id'] ?? 0,
+      eventId: json['event_id'] ?? json['event']?['id'] ?? 0,
+      status: json['status']?.toString() ?? 'pending',
+      inviterName: json['inviter_name'] ?? json['inviter']?['name'],
       createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at']) : null,
-    );
-  }
-}
-
-class AgentScorecard {
-  final int overallScore;
-  final int tasksCompleted;
-  final int tasksTotal;
-  final int propertiesAttended;
-  final int propertiesTotal;
-  final int eventsCompleted;
-  final int documentsUploaded;
-  final int tasksOverdue;
-  final double avgResponseHours;
-
-  AgentScorecard({
-    this.overallScore = 0,
-    this.tasksCompleted = 0,
-    this.tasksTotal = 0,
-    this.propertiesAttended = 0,
-    this.propertiesTotal = 0,
-    this.eventsCompleted = 0,
-    this.documentsUploaded = 0,
-    this.tasksOverdue = 0,
-    this.avgResponseHours = 0.0,
-  });
-
-  factory AgentScorecard.fromJson(Map<String, dynamic> json) {
-    return AgentScorecard(
-      overallScore: json['overall_score'] ?? 0,
-      tasksCompleted: json['tasks_completed'] ?? 0,
-      tasksTotal: json['tasks_total'] ?? 0,
-      propertiesAttended: json['properties_attended'] ?? 0,
-      propertiesTotal: json['properties_total'] ?? 0,
-      eventsCompleted: json['events_completed'] ?? 0,
-      documentsUploaded: json['documents_uploaded'] ?? 0,
-      tasksOverdue: json['tasks_overdue'] ?? 0,
-      avgResponseHours: (json['avg_response_hours'] ?? 0).toDouble(),
+      responseAt: json['response_at'] != null ? DateTime.tryParse(json['response_at']) : null,
+      acknowledgedAt:
+          json['acknowledged_at'] != null ? DateTime.tryParse(json['acknowledged_at']) : null,
+      event: json['event'] is Map
+          ? CalendarEvent.fromJson(Map<String, dynamic>.from(json['event'] as Map))
+          : null,
+      liveConflicts: (json['live_conflicts'] as List? ?? const [])
+          .whereType<Map>()
+          .map((e) => CalendarEvent.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
     );
   }
 }

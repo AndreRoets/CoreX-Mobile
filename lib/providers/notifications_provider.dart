@@ -56,7 +56,7 @@ class NotificationsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> markRead(int id) async {
+  Future<void> markRead(String id) async {
     final idx = _items.indexWhere((n) => n.id == id);
     if (idx == -1) return;
     final n = _items[idx];

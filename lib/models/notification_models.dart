@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
 /// One row in `GET /api/notifications`.
+///
+/// `id` is a Laravel notification UUID (string), not an int — the server uses
+/// `Illuminate\Notifications\DatabaseNotification` which keys on UUID.
 class NotificationItem {
-  final int id;
+  final String id;
   final String type;
   final String eventKey;
   final String pillar;
@@ -33,7 +36,7 @@ class NotificationItem {
   bool get isRead => readAt != null;
 
   factory NotificationItem.fromJson(Map<String, dynamic> j) => NotificationItem(
-        id: (j['id'] as num).toInt(),
+        id: j['id'].toString(),
         type: j['type']?.toString() ?? '',
         eventKey: j['event_key']?.toString() ?? '',
         pillar: j['pillar']?.toString() ?? '',

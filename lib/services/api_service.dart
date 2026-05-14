@@ -16,6 +16,7 @@ import '../models/property_overview.dart';
 import '../models/branding.dart';
 import '../models/space.dart';
 import '../models/task_extras.dart';
+import '../models/today_card.dart';
 
 class ApiService {
   static String get baseUrl => Env.apiBaseUrl;
@@ -150,20 +151,37 @@ class ApiService {
     throw ApiException(response.statusCode, 'Failed to load profile');
   }
 
-  // --- Dashboard ---
+  // --- Today (card-driven cockpit) ---
 
-  Future<DashboardData> getDashboard() async {
-    if (useMockData) return _mockDashboard();
-
-    final response = await http.get(
-      Uri.parse('$baseUrl/command-center/dashboard'),
-      headers: await _headers(),
-    ).timeout(_timeout);
+  /// `GET /api/command-center/today` — role-aware list of cards rendered by
+  /// the new generic Today screen. Replaces the legacy `dashboard` shape for
+  /// that screen; other consumers (KPI tiles, mock test) still use
+  /// [getDashboard].
+  Future<TodayPayload> getToday() async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/command-center/today'), headers: await _headers())
+        .timeout(_timeout);
 
     if (response.statusCode == 200) {
-      return DashboardData.fromJson(jsonDecode(response.body));
+      return TodayPayload.fromJson(
+          Map<String, dynamic>.from(jsonDecode(response.body) as Map));
     }
-    throw ApiException(response.statusCode, 'Failed to load dashboard');
+    throw ApiException(response.statusCode, 'Failed to load today');
+  }
+
+  /// `POST /api/command-center/today/refresh` — busts the 5-minute server
+  /// cache then returns the same shape as [getToday].
+  Future<TodayPayload> refreshToday() async {
+    final response = await http
+        .post(Uri.parse('$baseUrl/command-center/today/refresh'),
+            headers: await _headers())
+        .timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      return TodayPayload.fromJson(
+          Map<String, dynamic>.from(jsonDecode(response.body) as Map));
+    }
+    throw ApiException(response.statusCode, 'Failed to refresh today');
   }
 
   // --- Tasks ---
@@ -191,6 +209,8 @@ class ApiService {
     String? dueDate,
     String? description,
     bool sendReminder = true,
+    int? propertyId,
+    int? contactId,
   }) async {
     if (useMockData) {
       await Future.delayed(const Duration(milliseconds: 500));
@@ -207,6 +227,8 @@ class ApiService {
         if (dueDate != null) 'due_date': dueDate,
         if (description != null) 'description': description,
         'send_reminder': sendReminder,
+        if (propertyId != null) 'property_id': propertyId,
+        if (contactId != null) 'contact_id': contactId,
       }),
     ).timeout(_timeout);
 
@@ -214,6 +236,26 @@ class ApiService {
       return CommandTask.fromJson(jsonDecode(response.body));
     }
     throw ApiException(response.statusCode, 'Failed to create task');
+  }
+
+  /// Full task update (PUT /command-center/tasks/{id}). Pass only the fields
+  /// you want changed; nulls are skipped. Used by the task detail edit form.
+  Future<CommandTask> updateTask(int taskId, Map<String, dynamic> payload) async {
+    if (useMockData) return CommandTask(id: taskId, title: payload['title']?.toString() ?? '');
+    final response = await http.put(
+      Uri.parse('$baseUrl/command-center/tasks/$taskId'),
+      headers: await _headers(),
+      body: jsonEncode(payload),
+    ).timeout(_timeout);
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      final map = body is Map && body['task'] is Map
+          ? Map<String, dynamic>.from(body['task'])
+          : Map<String, dynamic>.from(body as Map);
+      return CommandTask.fromJson(map);
+    }
+    if (response.statusCode == 422) throw _parseValidationError(response.body);
+    throw ApiException(response.statusCode, _serverErrorMessage(response.body, 'update task'));
   }
 
   Future<void> completeTask(int taskId) async {
@@ -547,6 +589,70 @@ class ApiService {
     throw ApiException(response.statusCode, 'Failed to load events');
   }
 
+  /// `GET /command-center/calendar?start=YYYY-MM-DD&end=YYYY-MM-DD`.
+  /// Range fetch used by the Calendar screen (Month/Week/Day/Agenda) so the
+  /// view is paged tightly around what's visible (+1 day padding handled by
+  /// the caller).
+  Future<List<CalendarEvent>> getCalendarRange({
+    required String start,
+    required String end,
+  }) async {
+    if (useMockData) return _mockEvents();
+    final uri = Uri.parse('$baseUrl/command-center/calendar').replace(
+      queryParameters: {'start': start, 'end': end},
+    );
+    final response =
+        await http.get(uri, headers: await _headers()).timeout(_timeout);
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      final list = body is List
+          ? body
+          : (body is Map ? (body['events'] ?? body['data'] ?? []) : []);
+      return (list as List)
+          .whereType<Map>()
+          .map((e) => CalendarEvent.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    throw ApiException(response.statusCode, 'Failed to load calendar range');
+  }
+
+  /// Spec endpoint: `GET /command-center/calendar?year=YYYY&month=MM`.
+  /// Returns the events list AND a pre-built `by_date` map keyed by
+  /// `YYYY-MM-DD`. Used by the Calendar screen's month/agenda views.
+  Future<({List<CalendarEvent> events, Map<String, List<CalendarEvent>> byDate})>
+      getCalendarByMonth(int year, int month) async {
+    if (useMockData) {
+      final ev = _mockEvents();
+      return (events: ev, byDate: <String, List<CalendarEvent>>{});
+    }
+    final uri = Uri.parse('$baseUrl/command-center/calendar').replace(queryParameters: {
+      'year': '$year',
+      'month': month.toString().padLeft(2, '0'),
+    });
+    final response = await http.get(uri, headers: await _headers()).timeout(_timeout);
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final events = (body['events'] as List? ?? [])
+          .whereType<Map>()
+          .map((e) => CalendarEvent.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+      final byDate = <String, List<CalendarEvent>>{};
+      final rawMap = body['by_date'];
+      if (rawMap is Map) {
+        rawMap.forEach((k, v) {
+          if (v is List) {
+            byDate[k.toString()] = v
+                .whereType<Map>()
+                .map((e) => CalendarEvent.fromJson(Map<String, dynamic>.from(e)))
+                .toList();
+          }
+        });
+      }
+      return (events: events, byDate: byDate);
+    }
+    throw ApiException(response.statusCode, 'Failed to load calendar');
+  }
+
   Future<CalendarEvent> createEvent({
     required String title,
     required String eventDate,
@@ -556,6 +662,9 @@ class ApiService {
     bool allDay = false,
     String? description,
     bool sendReminder = true,
+    int? propertyId,
+    int? contactId,
+    String? category,
   }) async {
     if (useMockData) {
       await Future.delayed(const Duration(milliseconds: 500));
@@ -574,13 +683,141 @@ class ApiService {
         'all_day': allDay,
         if (description != null) 'description': description,
         'send_reminder': sendReminder,
+        if (propertyId != null) 'property_id': propertyId,
+        if (contactId != null) 'contact_id': contactId,
+        if (category != null) 'category': category,
       }),
     ).timeout(_timeout);
 
     if (response.statusCode == 200 || response.statusCode == 201) {
       return CalendarEvent.fromJson(jsonDecode(response.body));
     }
+    if (response.statusCode == 422) throw _parseValidationError(response.body);
     throw ApiException(response.statusCode, 'Failed to create event');
+  }
+
+  /// PUT /command-center/calendar/{id}. Used for both the edit form and
+  /// drag-to-reschedule (in the latter case pass only `event_date` +
+  /// optional `end_date`).
+  Future<CalendarEvent> updateEvent(int eventId, Map<String, dynamic> payload) async {
+    if (useMockData) return CalendarEvent(id: eventId, title: payload['title']?.toString() ?? '', eventDate: DateTime.now());
+    final response = await http.put(
+      Uri.parse('$baseUrl/command-center/calendar/$eventId'),
+      headers: await _headers(),
+      body: jsonEncode(payload),
+    ).timeout(_timeout);
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      final map = body is Map && body['event'] is Map
+          ? Map<String, dynamic>.from(body['event'])
+          : Map<String, dynamic>.from(body as Map);
+      return CalendarEvent.fromJson(map);
+    }
+    if (response.statusCode == 422) throw _parseValidationError(response.body);
+    throw ApiException(response.statusCode, _serverErrorMessage(response.body, 'update event'));
+  }
+
+  /// DELETE /command-center/calendar/{id}. Cascades on the server: cancels
+  /// pending invitations and notifies attendees.
+  Future<void> deleteEvent(int eventId) async {
+    if (useMockData) return;
+    final response = await http.delete(
+      Uri.parse('$baseUrl/command-center/calendar/$eventId'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw ApiException(response.statusCode, 'Failed to delete event');
+    }
+  }
+
+  /// POST /command-center/calendar/{id}/dismiss — quick-action on the Today
+  /// "today_events" card.
+  Future<void> dismissEvent(int eventId) async {
+    if (useMockData) return;
+    final response = await http.post(
+      Uri.parse('$baseUrl/command-center/calendar/$eventId/dismiss'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+    if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, 'Failed to dismiss event');
+    }
+  }
+
+  /// GET /command-center/calendar/conflicts?start=&end=&exclude_event_id=
+  /// Called from the create/edit event form on date-time change (debounced).
+  Future<List<CalendarEvent>> getCalendarConflicts({
+    required String start,
+    required String end,
+    int? excludeEventId,
+  }) async {
+    if (useMockData) return const [];
+    final uri = Uri.parse('$baseUrl/command-center/calendar/conflicts').replace(queryParameters: {
+      'start': start,
+      'end': end,
+      if (excludeEventId != null) 'exclude_event_id': '$excludeEventId',
+    });
+    final response = await http.get(uri, headers: await _headers()).timeout(_timeout);
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      final list = body is List ? body : (body is Map ? (body['conflicts'] as List? ?? const []) : const []);
+      return list
+          .whereType<Map>()
+          .map((e) => CalendarEvent.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    throw ApiException(response.statusCode, 'Failed to load conflicts');
+  }
+
+  // --- Calendar Invitations ---
+
+  Future<List<CalendarInvitation>> getCalendarInvitations() async {
+    if (useMockData) return const [];
+    final response = await http.get(
+      Uri.parse('$baseUrl/command-center/calendar/invitations'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      final list = body is Map ? (body['invitations'] as List? ?? const []) : const [];
+      return list
+          .whereType<Map>()
+          .map((e) => CalendarInvitation.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    throw ApiException(response.statusCode, 'Failed to load invitations');
+  }
+
+  /// POST /command-center/calendar/invitations/{id}/respond
+  /// [action] must be one of `accepted`, `tentative`, `declined`.
+  Future<CalendarInvitation> respondToInvitation(int invitationId, String action, {String? notes}) async {
+    if (useMockData) return CalendarInvitation(id: invitationId, eventId: 0, status: action);
+    final response = await http.post(
+      Uri.parse('$baseUrl/command-center/calendar/invitations/$invitationId/respond'),
+      headers: await _headers(),
+      body: jsonEncode({'action': action, if (notes != null) 'notes': notes}),
+    ).timeout(_timeout);
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      final map = body is Map && body['invitation'] is Map
+          ? Map<String, dynamic>.from(body['invitation'])
+          : Map<String, dynamic>.from(body as Map);
+      return CalendarInvitation.fromJson(map);
+    }
+    if (response.statusCode == 422) throw _parseValidationError(response.body);
+    throw ApiException(response.statusCode, 'Failed to respond to invitation');
+  }
+
+  /// POST /command-center/calendar/invitations/{id}/acknowledge — organizer
+  /// confirms they've seen a declined invitation.
+  Future<void> acknowledgeInvitation(int invitationId) async {
+    if (useMockData) return;
+    final response = await http.post(
+      Uri.parse('$baseUrl/command-center/calendar/invitations/$invitationId/acknowledge'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+    if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, 'Failed to acknowledge invitation');
+    }
   }
 
   Future<void> completeEvent(int eventId) async {
@@ -1389,7 +1626,7 @@ class ApiService {
     throw ApiException(response.statusCode, 'Failed to load notifications');
   }
 
-  Future<void> markNotificationRead(int id) async {
+  Future<void> markNotificationRead(String id) async {
     if (useMockData) return;
     final response = await http.post(
       Uri.parse('$baseUrl/notifications/$id/read'),
@@ -1480,51 +1717,6 @@ class ApiService {
 
   // --- Mock Data ---
 
-  DashboardData _mockDashboard() {
-    return DashboardData(
-      mtdPoints: 245,
-      monthlyTarget: 300,
-      taskSummary: const TaskSummary(today: 5, overdue: 3, thisWeek: 18, open: 12),
-      propHealthSummary: const PropertyHealthSummary(critical: 3, attention: 8, good: 24),
-      todayEvents: _mockEvents().where((e) {
-        final now = DateTime.now();
-        return e.eventDate.year == now.year && e.eventDate.month == now.month && e.eventDate.day == now.day;
-      }).toList(),
-      overdueEvents: [],
-      myTasks: _mockTasks().where((t) => t.status != 'done').toList(),
-      overdueTasks: _mockTasks().where((t) => t.isOverdue).toList(),
-      propsNeedingAttention: [
-        PropertyHealth(score: 35, grade: 'critical', propertyId: 1, propertyAddress: '12 Marine Drive, Amanzimtoti',
-            factors: [HealthFactor(label: 'No viewings in 21 days', penalty: 30)]),
-        PropertyHealth(score: 52, grade: 'attention', propertyId: 2, propertyAddress: '45 Beach Road, Umkomaas',
-            factors: [HealthFactor(label: 'Price stale for 14 days', penalty: 20)]),
-        PropertyHealth(score: 78, grade: 'good', propertyId: 3, propertyAddress: '8 Ocean View, Warner Beach',
-            factors: [HealthFactor(label: 'Photos need update', penalty: 10)]),
-      ],
-      candidateDocs: [
-        CandidateDoc(documentId: 1, documentName: 'Mandate Agreement', creatorName: 'Sarah Chen', status: 'pending'),
-      ],
-      scorecard: AgentScorecard(overallScore: 72, tasksCompleted: 18, tasksTotal: 25, propertiesAttended: 12, propertiesTotal: 16),
-      totalOverdue: 3,
-      inboxOverdueTasks: [
-        CommandTask(id: 100, title: 'Call attorney re: transfer', taskType: 'follow_up', priority: 'high',
-            dueDate: DateTime.now().subtract(const Duration(days: 2)),
-            propertyId: 1, propertyAddress: '12 Marine Drive, Amanzimtoti', pillarTag: 'property'),
-        CommandTask(id: 101, title: 'Upload FICA documents', taskType: 'document_upload', priority: 'critical',
-            dueDate: DateTime.now().subtract(const Duration(days: 5)),
-            propertyId: 2, propertyAddress: '45 Beach Road, Umkomaas', pillarTag: 'property'),
-      ],
-      inboxOverdueEvents: [
-        CalendarEvent(id: 200, title: 'Property viewing with buyer', eventType: 'deal', priority: 'high',
-            eventDate: DateTime.now().subtract(const Duration(days: 1)), colour: '#3b82f6',
-            propertyId: 4, propertyAddress: '23 Kingsway, Scottburgh', pillarTag: 'property'),
-      ],
-      inboxCandidateDocs: [
-        CandidateDoc(id: 10, documentId: 1, documentName: 'Mandate Agreement', creatorName: 'Sarah Chen', status: 'pending'),
-      ],
-      inboxTotal: 4,
-    );
-  }
 
   List<CommandTask> _mockTasks() {
     final now = DateTime.now();

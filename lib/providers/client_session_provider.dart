@@ -94,10 +94,15 @@ class ClientSessionProvider extends ChangeNotifier {
       _contact = me.contact;
       _agencies = me.agencies;
       _passwordMustChange = me.client.passwordMustChange;
+      _isLoggedIn = true;
       notifyListeners();
     } on ApiException catch (e) {
       if (e.statusCode == 401) {
         await signOutLocal();
+      } else if (e.statusCode == 423) {
+        _isLoggedIn = true;
+        _passwordMustChange = true;
+        notifyListeners();
       }
     }
   }

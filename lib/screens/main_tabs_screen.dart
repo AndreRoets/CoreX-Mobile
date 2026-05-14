@@ -7,12 +7,12 @@ import '../providers/notifications_provider.dart';
 import '../theme.dart';
 import '../widgets/bell_icon.dart';
 import 'calendar_screen.dart';
-import 'inbox/inbox_screen.dart';
 import 'tasks_screen.dart';
 import 'today/today_screen.dart';
 
-/// App-wide 5-tab shell. Replaces the old HomeHubScreen → DashboardScreen
-/// route chain: after login the agent lands here, on the Today tab.
+/// App-wide 3-tab shell. After login the agent lands here on Today.
+/// The legacy Inbox tab was removed when the `/dashboard` surface was
+/// retired — Today's `overdue_items` card now covers that workflow.
 class MainTabsScreen extends StatefulWidget {
   const MainTabsScreen({super.key});
 
@@ -23,13 +23,13 @@ class MainTabsScreen extends StatefulWidget {
 class _MainTabsScreenState extends State<MainTabsScreen> {
   int _index = 0;
 
-  static const _titles = ['Today', 'Calendar', 'Tasks', 'Inbox'];
+  static const _titles = ['Today', 'Calendar', 'Tasks'];
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<DashboardProvider>().loadDashboard();
+      context.read<DashboardProvider>().loadToday();
       final notes = context.read<NotificationsProvider>();
       notes.loadFeed();
       notes.loadOverdue();
@@ -43,9 +43,6 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final inboxTotal = context.select<DashboardProvider, int>(
-      (p) => p.data.inboxTotal,
-    );
     final brand = BrandColors.of(context);
 
     return Scaffold(
@@ -57,45 +54,14 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
               color: AppTheme.textPrimary(context)),
           onPressed: () => Navigator.pop(context),
         ),
-        actions: [
-          const BellIcon(),
-          if (_index == 0 && inboxTotal > 0)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Center(
-                child: GestureDetector(
-                  onTap: () => _jumpTo(3),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFef4444).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(AppTheme.radius),
-                      border: Border.all(
-                        color: const Color(0xFFef4444).withValues(alpha: 0.35),
-                      ),
-                    ),
-                    child: Text(
-                      '$inboxTotal need action',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFFef4444),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
+        actions: const [BellIcon()],
       ),
       body: IndexedStack(
         index: _index,
-        children: [
-          TodayScreen(onJumpToInbox: () => _jumpTo(3)),
-          const CalendarScreen(embedded: true),
-          const TasksScreen(embedded: true),
-          const InboxScreen(),
+        children: const [
+          TodayScreen(),
+          CalendarScreen(embedded: true),
+          TasksScreen(embedded: true),
         ],
       ),
       bottomNavigationBar: Container(
@@ -111,54 +77,16 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
           type: BottomNavigationBarType.fixed,
           selectedFontSize: 11,
           unselectedFontSize: 11,
-          items: [
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.today_rounded), label: 'Today'),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.calendar_month_rounded), label: 'Calendar'),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.checklist_rounded), label: 'Tasks'),
+          items: const [
             BottomNavigationBarItem(
-              icon: _InboxIcon(count: inboxTotal),
-              label: 'Inbox',
-            ),
+                icon: Icon(Icons.today_rounded), label: 'Today'),
+            BottomNavigationBarItem(
+                icon: Icon(Icons.calendar_month_rounded), label: 'Calendar'),
+            BottomNavigationBarItem(
+                icon: Icon(Icons.checklist_rounded), label: 'Tasks'),
           ],
         ),
       ),
-    );
-  }
-
-  // Exposed for debug only — current tab title.
-  // ignore: unused_element
-  String get _title => _titles[_index];
-}
-
-/// Inbox icon with a small dot (never a "9+" badge) when there's anything
-/// actionable. Count itself lives on the Today header + Inbox header.
-class _InboxIcon extends StatelessWidget {
-  final int count;
-  const _InboxIcon({required this.count});
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        const Icon(Icons.inbox_rounded),
-        if (count > 0)
-          Positioned(
-            right: -3,
-            top: -3,
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: const BoxDecoration(
-                color: Color(0xFFef4444),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-      ],
     );
   }
 }

@@ -12,6 +12,11 @@ class SecurityService {
   static final SecurityService instance = SecurityService._();
 
   final LocalAuthentication _auth = LocalAuthentication();
+
+  /// True while a system biometric/credential prompt is on screen. The
+  /// inactivity gate consults this to avoid re-locking the session in
+  /// response to the lifecycle transitions the prompt itself triggers.
+  static bool isAuthenticating = false;
   final FlutterSecureStorage _vault = const FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
@@ -35,6 +40,7 @@ class SecurityService {
   }
 
   Future<bool> authenticate({String reason = 'Sign in to CoreX'}) async {
+    isAuthenticating = true;
     try {
       return await _auth.authenticate(
         localizedReason: reason,
@@ -52,6 +58,13 @@ class SecurityService {
       );
     } on PlatformException {
       return false;
+    } finally {
+      // Keep the suppression alive briefly past the prompt dismissal so the
+      // tail of lifecycle events (resumed/inactive flicker on some OEMs)
+      // doesn't trip the inactivity lock.
+      Future.delayed(const Duration(milliseconds: 800), () {
+        isAuthenticating = false;
+      });
     }
   }
 

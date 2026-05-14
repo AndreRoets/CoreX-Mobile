@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../models/dashboard_data.dart';
 import '../../providers/dashboard_provider.dart';
+import '../../services/api_service.dart';
 import '../../theme.dart';
 
 /// One sheet, two modes — replaces the separate create-task and create-event
@@ -34,6 +37,12 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
   TimeOfDay? _eventTime;
   bool _allDay = false;
 
+  // Conflict check (debounced 400ms on event date/time change).
+  final _api = ApiService();
+  Timer? _conflictDebounce;
+  List<CalendarEvent> _conflicts = const [];
+  bool _checkingConflicts = false;
+
   @override
   void initState() {
     super.initState();
@@ -42,9 +51,49 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
 
   @override
   void dispose() {
+    _conflictDebounce?.cancel();
     _titleController.dispose();
     _descriptionController.dispose();
     super.dispose();
+  }
+
+  /// Called whenever the event date, time, or all-day toggle changes.
+  /// Debounces to avoid hammering the API while the user picks.
+  void _scheduleConflictCheck() {
+    _conflictDebounce?.cancel();
+    if (_mode != 'event' || _eventDate == null || _allDay) {
+      if (_conflicts.isNotEmpty) {
+        setState(() => _conflicts = const []);
+      }
+      return;
+    }
+    _conflictDebounce = Timer(const Duration(milliseconds: 400), _runConflictCheck);
+  }
+
+  Future<void> _runConflictCheck() async {
+    if (!mounted || _eventDate == null) return;
+    final time = _eventTime ?? const TimeOfDay(hour: 9, minute: 0);
+    final start = DateTime(
+      _eventDate!.year, _eventDate!.month, _eventDate!.day,
+      time.hour, time.minute,
+    );
+    final end = start.add(const Duration(hours: 1));
+    setState(() => _checkingConflicts = true);
+    try {
+      final conflicts = await _api.getCalendarConflicts(
+        start: start.toIso8601String(),
+        end: end.toIso8601String(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _conflicts = conflicts;
+        _checkingConflicts = false;
+      });
+    } catch (_) {
+      // Soft-fail — never block the create flow on a conflict-check error.
+      if (!mounted) return;
+      setState(() => _checkingConflicts = false);
+    }
   }
 
   Future<void> _submit() async {
@@ -179,6 +228,7 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
                   const SizedBox(height: 16),
 
                   if (_mode == 'event') _buildEventDateTime(),
+                  if (_mode == 'event') _buildConflictBanner(),
                   if (_mode == 'event') const SizedBox(height: 16),
 
                   Text('Priority',
@@ -256,7 +306,10 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
                                     color: AppTheme.textSecondary(context)))),
                         Switch.adaptive(
                           value: _allDay,
-                          onChanged: (v) => setState(() => _allDay = v),
+                          onChanged: (v) {
+                            setState(() => _allDay = v);
+                            _scheduleConflictCheck();
+                          },
                           activeTrackColor: AppTheme.brand,
                         ),
                       ],
@@ -338,6 +391,56 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
     );
   }
 
+  /// Amber banner shown when the chosen event start collides with one or
+  /// more existing events. Non-blocking — the user can still submit.
+  Widget _buildConflictBanner() {
+    if (_checkingConflicts) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 14, height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 8),
+            Text('Checking for conflicts…',
+                style: TextStyle(fontSize: 12, color: AppTheme.textMuted(context))),
+          ],
+        ),
+      );
+    }
+    if (_conflicts.isEmpty) return const SizedBox.shrink();
+    final first = _conflicts.first;
+    final extra = _conflicts.length - 1;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFBEB),
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          border: Border.all(color: const Color(0xFFF59E0B)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Color(0xFFB45309), size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                extra == 0
+                    ? 'Conflicts with "${first.title}"'
+                    : 'Conflicts with "${first.title}" + $extra more',
+                style: const TextStyle(
+                    fontSize: 12, color: Color(0xFF92400E), fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildEventDateTime() {
     return Row(
       children: [
@@ -353,7 +456,10 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
               const SizedBox(height: 8),
               _datePicker(
                 value: _eventDate,
-                onPicked: (d) => setState(() => _eventDate = d),
+                onPicked: (d) {
+                  setState(() => _eventDate = d);
+                  _scheduleConflictCheck();
+                },
                 allowPast: true,
               ),
             ],
@@ -377,7 +483,10 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
                       context: context,
                       initialTime: _eventTime ?? TimeOfDay.now(),
                     );
-                    if (picked != null) setState(() => _eventTime = picked);
+                    if (picked != null) {
+                      setState(() => _eventTime = picked);
+                      _scheduleConflictCheck();
+                    }
                   },
                   child: Container(
                     width: double.infinity,

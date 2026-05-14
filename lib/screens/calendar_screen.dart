@@ -4,6 +4,8 @@ import '../theme.dart';
 import '../providers/dashboard_provider.dart';
 import '../models/dashboard_data.dart';
 import '../widgets/event_card.dart';
+import 'calendar/event_action_sheet.dart';
+import 'calendar/invitations_screen.dart';
 import 'shared/quick_add_sheet.dart';
 
 class CalendarScreen extends StatefulWidget {
@@ -14,23 +16,81 @@ class CalendarScreen extends StatefulWidget {
   State<CalendarScreen> createState() => _CalendarScreenState();
 }
 
-class _CalendarScreenState extends State<CalendarScreen> {
+enum _CalView { month, week, day, agenda }
+
+class _CalendarScreenState extends State<CalendarScreen>
+    with WidgetsBindingObserver {
   late DateTime _currentMonth;
-  bool _isAgendaView = false;
+  // Spec: default view = Day.
+  _CalView _view = _CalView.day;
   DateTime? _selectedDate;
+  // Agenda forward-pagination window (months from `_currentMonth`).
+  final int _agendaWindowMonths = 2;
 
   @override
   void initState() {
     super.initState();
     _currentMonth = DateTime(DateTime.now().year, DateTime.now().month);
+    _selectedDate = DateTime.now();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadEvents();
+      _reload();
+      context.read<DashboardProvider>().loadInvitations();
     });
   }
 
-  void _loadEvents() {
-    final month = '${_currentMonth.year}-${_currentMonth.month.toString().padLeft(2, '0')}';
-    context.read<DashboardProvider>().loadEvents(month: month);
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _reload();
+    }
+  }
+
+  /// Compute the visible-window range for the current view, with +1 day
+  /// padding on either side as the spec requires.
+  ({DateTime start, DateTime end}) _visibleRange() {
+    switch (_view) {
+      case _CalView.month:
+        final first = DateTime(_currentMonth.year, _currentMonth.month, 1);
+        final last =
+            DateTime(_currentMonth.year, _currentMonth.month + 1, 0);
+        return (
+          start: first.subtract(const Duration(days: 1)),
+          end: last.add(const Duration(days: 1)),
+        );
+      case _CalView.week:
+        final anchor = _selectedDate ?? DateTime.now();
+        final monday = anchor.subtract(Duration(days: anchor.weekday - 1));
+        return (
+          start: monday.subtract(const Duration(days: 1)),
+          end: monday.add(const Duration(days: 7)),
+        );
+      case _CalView.day:
+        final anchor = _selectedDate ?? DateTime.now();
+        return (
+          start: anchor.subtract(const Duration(days: 1)),
+          end: anchor.add(const Duration(days: 1)),
+        );
+      case _CalView.agenda:
+        return (
+          start: _currentMonth.subtract(const Duration(days: 1)),
+          end: DateTime(
+              _currentMonth.year, _currentMonth.month + _agendaWindowMonths, 0),
+        );
+    }
+  }
+
+  Future<void> _reload() async {
+    final r = _visibleRange();
+    await context
+        .read<DashboardProvider>()
+        .loadEventsRange(start: r.start, end: r.end);
   }
 
   void _previousMonth() {
@@ -38,7 +98,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _currentMonth = DateTime(_currentMonth.year, _currentMonth.month - 1);
       _selectedDate = null;
     });
-    _loadEvents();
+    _reload();
   }
 
   void _nextMonth() {
@@ -46,89 +106,185 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _currentMonth = DateTime(_currentMonth.year, _currentMonth.month + 1);
       _selectedDate = null;
     });
-    _loadEvents();
+    _reload();
+  }
+
+  void _shiftDays(int days) {
+    setState(() {
+      final anchor = _selectedDate ?? DateTime.now();
+      _selectedDate = anchor.add(Duration(days: days));
+      // Keep month header aligned with whatever the anchor is now in.
+      _currentMonth =
+          DateTime(_selectedDate!.year, _selectedDate!.month);
+    });
+    _reload();
+  }
+
+  void _changeView(_CalView v) {
+    setState(() {
+      _view = v;
+      if (v == _CalView.week || v == _CalView.day) {
+        _selectedDate ??= DateTime.now();
+      }
+    });
+    _reload();
   }
 
   Widget _buildBody(BuildContext context, List<CalendarEvent> events) {
     return Column(
         children: [
-          // Sticky header
+          // Sticky two-row header — keeps the month name big and the
+          // chevrons/Today/view-toggle/invitations evenly spaced beneath it.
           Container(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 12, 8, 10),
             decoration: BoxDecoration(
               color: AppTheme.background(context),
-              border: Border(bottom: BorderSide(color: AppTheme.borderColor(context))),
+              border: Border(
+                  bottom: BorderSide(color: AppTheme.borderColor(context))),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                GestureDetector(
-                  onTap: _previousMonth,
-                  child: Container(
-                    width: 40, height: 40,
-                    decoration: BoxDecoration(color: AppTheme.surface(context), borderRadius: BorderRadius.circular(AppTheme.radius)),
-                    child: Icon(Icons.chevron_left, size: 20, color: AppTheme.textSecondary(context)),
+                Row(children: [
+                  Expanded(
+                    child: Text(
+                      _monthName(_currentMonth),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textPrimary(context)),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _monthName(_currentMonth),
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary(context)),
+                  IconButton(
+                    tooltip: 'Invitations',
+                    icon: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        const Icon(Icons.mail_outline),
+                        if (context
+                                .watch<DashboardProvider>()
+                                .pendingInvitationCount >
+                            0)
+                          Positioned(
+                            right: -2,
+                            top: -2,
+                            child: Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                  color: Colors.amber,
+                                  shape: BoxShape.circle),
+                            ),
+                          ),
+                      ],
+                    ),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const InvitationsScreen()),
+                    ),
                   ),
-                ),
-                GestureDetector(
-                  onTap: _nextMonth,
-                  child: Container(
-                    width: 40, height: 40,
-                    decoration: BoxDecoration(color: AppTheme.surface(context), borderRadius: BorderRadius.circular(AppTheme.radius)),
-                    child: Icon(Icons.chevron_right, size: 20, color: AppTheme.textSecondary(context)),
+                ]),
+                const SizedBox(height: 8),
+                Row(children: [
+                  _RoundIconBtn(
+                      icon: Icons.chevron_left, onTap: _previousMonth),
+                  const SizedBox(width: 6),
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _currentMonth =
+                            DateTime(DateTime.now().year, DateTime.now().month);
+                        _selectedDate = DateTime.now();
+                      });
+                      _reload();
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surface(context),
+                        borderRadius: BorderRadius.circular(AppTheme.radius),
+                        border: Border.all(
+                            color: AppTheme.borderColor(context)),
+                      ),
+                      child: Text('Today',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.textSecondary(context))),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _currentMonth = DateTime(DateTime.now().year, DateTime.now().month);
-                      _selectedDate = DateTime.now();
-                    });
-                    _loadEvents();
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(color: AppTheme.surface(context), borderRadius: BorderRadius.circular(AppTheme.radius)),
-                    child: Text('Today', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textSecondary(context))),
+                  const SizedBox(width: 6),
+                  _RoundIconBtn(
+                      icon: Icons.chevron_right, onTap: _nextMonth),
+                  const Spacer(),
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(AppTheme.radius),
+                      border:
+                          Border.all(color: AppTheme.borderColor(context)),
+                    ),
+                    child: Row(children: [
+                      _ViewToggle(
+                          label: 'M',
+                          active: _view == _CalView.month,
+                          onTap: () => _changeView(_CalView.month)),
+                      _ViewToggle(
+                          label: 'W',
+                          active: _view == _CalView.week,
+                          onTap: () => _changeView(_CalView.week)),
+                      _ViewToggle(
+                          label: 'D',
+                          active: _view == _CalView.day,
+                          onTap: () => _changeView(_CalView.day)),
+                      _ViewToggle(
+                          label: 'A',
+                          active: _view == _CalView.agenda,
+                          onTap: () => _changeView(_CalView.agenda)),
+                    ]),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(AppTheme.radius),
-                    border: Border.all(color: AppTheme.borderColor(context)),
-                  ),
-                  child: Row(
-                    children: [
-                      _ViewToggle(label: 'Month', active: !_isAgendaView, onTap: () => setState(() => _isAgendaView = false)),
-                      _ViewToggle(label: 'Agenda', active: _isAgendaView, onTap: () => setState(() => _isAgendaView = true)),
-                    ],
-                  ),
-                ),
+                ]),
               ],
             ),
           ),
           Expanded(
-            child: _isAgendaView
-                ? _AgendaView(events: events)
-                : _MonthView(
-                    currentMonth: _currentMonth,
-                    events: events,
-                    selectedDate: _selectedDate,
-                    onDateSelected: (date) => setState(() => _selectedDate = date),
-                    onSwipeLeft: _nextMonth,
-                    onSwipeRight: _previousMonth,
-                  ),
+            child: RefreshIndicator(
+              onRefresh: _reload,
+              child: _renderView(events),
+            ),
           ),
         ],
     );
+  }
+
+  Widget _renderView(List<CalendarEvent> events) {
+    switch (_view) {
+      case _CalView.month:
+        return _MonthView(
+          currentMonth: _currentMonth,
+          events: events,
+          selectedDate: _selectedDate,
+          onDateSelected: (date) => setState(() => _selectedDate = date),
+          onSwipeLeft: _nextMonth,
+          onSwipeRight: _previousMonth,
+        );
+      case _CalView.week:
+        return _WeekView(
+          anchor: _selectedDate ?? DateTime.now(),
+          events: events,
+          onShift: _shiftDays,
+        );
+      case _CalView.day:
+        return _DayView(
+          day: _selectedDate ?? DateTime.now(),
+          events: events,
+          onShift: _shiftDays,
+        );
+      case _CalView.agenda:
+        return _AgendaView(events: events);
+    }
   }
 
   Widget _buildFab(BuildContext context) {
@@ -168,6 +324,29 @@ class _CalendarScreenState extends State<CalendarScreen> {
   String _monthName(DateTime dt) {
     const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     return '${months[dt.month - 1]} ${dt.year}';
+  }
+}
+
+class _RoundIconBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _RoundIconBtn({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: AppTheme.surface(context),
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          border: Border.all(color: AppTheme.borderColor(context)),
+        ),
+        child: Icon(icon, size: 20, color: AppTheme.textSecondary(context)),
+      ),
+    );
   }
 }
 
@@ -362,6 +541,7 @@ class _MonthView extends StatelessWidget {
                                 return EventCard(
                                   event: event,
                                   onComplete: () => context.read<DashboardProvider>().completeEvent(event.id),
+                                  onTap: () => showEventActionsSheet(context, event),
                                 );
                               },
                             ),
@@ -454,6 +634,7 @@ class _AgendaView extends StatelessWidget {
               child: EventCard(
                 event: event,
                 onComplete: () => context.read<DashboardProvider>().completeEvent(event.id),
+                onTap: () => showEventActionsSheet(context, event),
               ),
             )),
           ],
@@ -466,5 +647,196 @@ class _AgendaView extends StatelessWidget {
     const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
     const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     return '${days[dt.weekday - 1]} · ${dt.day} ${months[dt.month - 1]}';
+  }
+}
+
+/// Week view — strip of 7 day-pills above an event list for the focused day.
+/// Horizontal swipe shifts the week by 7 days. The focused day is the
+/// `anchor`; tapping a pill in the strip moves focus within the week.
+class _WeekView extends StatefulWidget {
+  final DateTime anchor;
+  final List<CalendarEvent> events;
+  final ValueChanged<int> onShift;
+  const _WeekView({required this.anchor, required this.events, required this.onShift});
+
+  @override
+  State<_WeekView> createState() => _WeekViewState();
+}
+
+class _WeekViewState extends State<_WeekView> {
+  late DateTime _focus;
+
+  @override
+  void initState() {
+    super.initState();
+    _focus = widget.anchor;
+  }
+
+  @override
+  void didUpdateWidget(covariant _WeekView old) {
+    super.didUpdateWidget(old);
+    if (old.anchor != widget.anchor) _focus = widget.anchor;
+  }
+
+  DateTime get _weekStart {
+    // Monday-anchored.
+    final wd = _focus.weekday;
+    return DateTime(_focus.year, _focus.month, _focus.day).subtract(Duration(days: wd - 1));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final start = _weekStart;
+    final days = List.generate(7, (i) => start.add(Duration(days: i)));
+    final focusedEvents = widget.events.where((e) =>
+        e.eventDate.year == _focus.year &&
+        e.eventDate.month == _focus.month &&
+        e.eventDate.day == _focus.day).toList()
+      ..sort((a, b) => a.eventDate.compareTo(b.eventDate));
+
+    return GestureDetector(
+      onHorizontalDragEnd: (d) {
+        final v = d.primaryVelocity ?? 0;
+        if (v < -200) widget.onShift(7);
+        if (v > 200) widget.onShift(-7);
+      },
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
+            child: Row(
+              children: days.map((d) {
+                final isFocus = d.year == _focus.year && d.month == _focus.month && d.day == _focus.day;
+                final dayCount = widget.events.where((e) =>
+                    e.eventDate.year == d.year &&
+                    e.eventDate.month == d.month &&
+                    e.eventDate.day == d.day).length;
+                return Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _focus = d),
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isFocus ? AppTheme.brand : AppTheme.surface(context),
+                        borderRadius: BorderRadius.circular(AppTheme.radius),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(['M','T','W','T','F','S','S'][d.weekday - 1],
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: isFocus ? Colors.white70 : AppTheme.textMuted(context),
+                              )),
+                          const SizedBox(height: 2),
+                          Text('${d.day}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: isFocus ? Colors.white : AppTheme.textPrimary(context),
+                              )),
+                          const SizedBox(height: 4),
+                          Container(
+                            width: 6, height: 6,
+                            decoration: BoxDecoration(
+                              color: dayCount > 0
+                                  ? (isFocus ? Colors.white : AppTheme.brand)
+                                  : Colors.transparent,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          Expanded(child: _DayList(day: _focus, events: focusedEvents)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Day view — single-day timeline as a vertically-scrolled list.
+class _DayView extends StatelessWidget {
+  final DateTime day;
+  final List<CalendarEvent> events;
+  final ValueChanged<int> onShift;
+  const _DayView({required this.day, required this.events, required this.onShift});
+
+  @override
+  Widget build(BuildContext context) {
+    final dayEvents = events.where((e) =>
+        e.eventDate.year == day.year &&
+        e.eventDate.month == day.month &&
+        e.eventDate.day == day.day).toList()
+      ..sort((a, b) => a.eventDate.compareTo(b.eventDate));
+
+    const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    return GestureDetector(
+      onHorizontalDragEnd: (d) {
+        final v = d.primaryVelocity ?? 0;
+        if (v < -200) onShift(1);
+        if (v > 200) onShift(-1);
+      },
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.chevron_left),
+                  onPressed: () => onShift(-1),
+                ),
+                Expanded(
+                  child: Center(
+                    child: Text('${day.day} ${months[day.month - 1]} ${day.year}',
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right),
+                  onPressed: () => onShift(1),
+                ),
+              ],
+            ),
+          ),
+          Expanded(child: _DayList(day: day, events: dayEvents)),
+        ],
+      ),
+    );
+  }
+}
+
+class _DayList extends StatelessWidget {
+  final DateTime day;
+  final List<CalendarEvent> events;
+  const _DayList({required this.day, required this.events});
+
+  @override
+  Widget build(BuildContext context) {
+    if (events.isEmpty) {
+      return Center(
+        child: Text('No events',
+            style: TextStyle(fontSize: 13, color: AppTheme.textMuted(context))),
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+      itemCount: events.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (context, i) {
+        final event = events[i];
+        return EventCard(
+          event: event,
+          onComplete: () => context.read<DashboardProvider>().completeEvent(event.id),
+          onTap: () => showEventActionsSheet(context, event),
+        );
+      },
+    );
   }
 }

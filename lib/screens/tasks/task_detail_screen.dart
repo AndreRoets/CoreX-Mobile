@@ -6,6 +6,7 @@ import '../../models/task_extras.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/dashboard_provider.dart';
 import '../../services/api_service.dart';
+import 'task_edit_sheet.dart';
 
 class TaskDetailScreen extends StatefulWidget {
   final CommandTask task;
@@ -174,6 +175,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         elevation: 0,
         title: Text('Task', style: TextStyle(color: AppTheme.textPrimary(context), fontSize: 16)),
         iconTheme: IconThemeData(color: AppTheme.textPrimary(context)),
+        actions: [
+          IconButton(
+            tooltip: 'Edit',
+            icon: const Icon(Icons.edit_outlined),
+            onPressed: () => showTaskEditSheet(context, widget.task),
+          ),
+        ],
       ),
       body: SafeArea(
         child: RefreshIndicator(

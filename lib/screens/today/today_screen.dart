@@ -1,774 +1,622 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
-import '../../models/branding.dart';
-import '../../models/dashboard_data.dart';
+import '../../models/notification_models.dart';
+import '../../models/today_card.dart';
 import '../../providers/dashboard_provider.dart';
+import '../../providers/notifications_provider.dart';
+import '../../services/api_service.dart';
+import '../../services/deep_link_router.dart';
 import '../../theme.dart';
-import '../../widgets/overdue_widget.dart';
-import '../../widgets/pillar_link.dart';
-import '../../widgets/pillar_tag_chip.dart';
-import '../../widgets/priority_badge.dart';
-import '../shared/quick_add_sheet.dart';
 
-/// The primary screen after login — merged timeline of today's events + tasks.
-/// Every row is an action: tap → open pillar, swipe right → Done,
-/// swipe left → inline reschedule.
+/// Today screen — two stacked blocks:
+///   A. Today's Schedule (calendar events for today, from `/command-center/today`)
+///   B. Unread Notifications (from `/notifications?unread=1`)
+///
+/// Pull-to-refresh refetches both. Foreground poll every 60s.
 class TodayScreen extends StatefulWidget {
-  /// Invoked when the user taps the "N need action" header badge — parent
-  /// MainTabsScreen switches to the Inbox tab.
-  final VoidCallback? onJumpToInbox;
-
-  const TodayScreen({super.key, this.onJumpToInbox});
+  const TodayScreen({super.key});
 
   @override
   State<TodayScreen> createState() => _TodayScreenState();
 }
 
-enum _Horizon { today, tomorrow, week }
-
-class _TodayScreenState extends State<TodayScreen> {
-  _Horizon _horizon = _Horizon.today;
+class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
+  Timer? _poll;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final dash = context.read<DashboardProvider>();
-      if (dash.data.inboxTotal == 0 && dash.data.myTasks.isEmpty) {
-        dash.loadDashboard();
-      }
-      // Load this month's events so Tomorrow/Week tabs have data.
-      final m = DateTime.now();
-      dash.loadEvents(month: '${m.year}-${m.month.toString().padLeft(2, '0')}');
+      _refresh();
+      _startPolling();
     });
   }
 
-  ({DateTime start, DateTime end}) _window() {
-    final now = DateTime.now();
-    final startOfToday = DateTime(now.year, now.month, now.day);
-    switch (_horizon) {
-      case _Horizon.today:
-        return (start: startOfToday, end: startOfToday.add(const Duration(days: 1)));
-      case _Horizon.tomorrow:
-        final t = startOfToday.add(const Duration(days: 1));
-        return (start: t, end: t.add(const Duration(days: 1)));
-      case _Horizon.week:
-        return (start: startOfToday, end: startOfToday.add(const Duration(days: 7)));
+  @override
+  void dispose() {
+    _poll?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refresh();
+      _startPolling();
+    } else {
+      _poll?.cancel();
     }
+  }
+
+  void _startPolling() {
+    _poll?.cancel();
+    _poll = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (mounted) _refresh();
+    });
+  }
+
+  Future<void> _refresh() async {
+    await Future.wait([
+      context.read<DashboardProvider>().loadToday(),
+      context.read<NotificationsProvider>().loadFeed(),
+    ]);
+  }
+
+  Future<void> _pullRefresh() async {
+    await Future.wait([
+      context.read<DashboardProvider>().refreshToday(),
+      context.read<NotificationsProvider>().loadFeed(),
+    ]);
   }
 
   @override
   Widget build(BuildContext context) {
     final dash = context.watch<DashboardProvider>();
-    final data = dash.data;
-    final brand = BrandColors.of(context);
+    final notes = context.watch<NotificationsProvider>();
+    final events = _todaysEvents(dash);
+    final unread = notes.items.where((n) => !n.isRead).toList();
 
-    final window = _window();
-
-    // Source lists.
-    final rawEvents = _horizon == _Horizon.today
-        ? data.todayEvents
-        : dash.events.where((e) =>
-            !e.eventDate.isBefore(window.start) &&
-            e.eventDate.isBefore(window.end)).toList();
-
-    final rawTasks = data.myTasks.where((t) {
-      if (t.dueDate == null) return _horizon == _Horizon.today;
-      return !t.dueDate!.isBefore(window.start) && t.dueDate!.isBefore(window.end);
-    }).toList();
-
-    // Split all-day from scheduled; tasks with no due time treated as scheduled by date.
-    final allDayEvents = rawEvents.where((e) => e.allDay).toList();
-    final scheduledEvents = rawEvents.where((e) => !e.allDay).toList();
-
-    final scheduledTasks = rawTasks.where((t) => t.dueDate != null).toList();
-    final unscheduledTasks = rawTasks.where((t) => t.dueDate == null).toList();
-
-    // Merge + sort scheduled items by time.
-    final scheduled = <_TimelineItem>[
-      ...scheduledEvents.map((e) => _TimelineItem.fromEvent(e)),
-      ...scheduledTasks.map((t) => _TimelineItem.fromTask(t)),
-    ]..sort((a, b) => a.sortAt.compareTo(b.sortAt));
-
-    final allDay = allDayEvents.map((e) => _TimelineItem.fromEvent(e)).toList();
-
-    return SafeArea(
-      bottom: false,
-      child: Stack(
+    return RefreshIndicator(
+      onRefresh: _pullRefresh,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
         children: [
-          RefreshIndicator(
-            color: brand.icon,
-            backgroundColor: AppTheme.surface(context),
-            onRefresh: () => dash.loadDashboard(),
-            child: CustomScrollView(
-              slivers: [
-                const SliverToBoxAdapter(child: OverdueWidget()),
-                // Horizon segmented — Today / Tomorrow / This Week
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppTheme.surface2(context),
-                        borderRadius: BorderRadius.circular(AppTheme.radius),
-                      ),
-                      padding: const EdgeInsets.all(3),
-                      child: Row(
-                        children: [
-                          _horizonTab(_Horizon.today, 'Today'),
-                          _horizonTab(_Horizon.tomorrow, 'Tomorrow'),
-                          _horizonTab(_Horizon.week, 'This Week'),
-                        ],
-                      ),
-                    ),
-                  ),
+          const _SectionHeader(label: "Today's Schedule"),
+          const SizedBox(height: 8),
+          if (events.isEmpty)
+            const _EmptyTile(text: 'No events today.')
+          else
+            ...events.map((e) => _EventRow(
+                  event: e,
+                  onTap: () => _openEventSheet(context, e),
+                )),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              const Expanded(
+                  child: _SectionHeader(label: 'Unread Notifications')),
+              if (notes.unread > 0)
+                TextButton(
+                  onPressed: () =>
+                      context.read<NotificationsProvider>().markAllRead(),
+                  child: const Text('Mark all read',
+                      style: TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
-
-                // Empty state
-                if (allDay.isEmpty && scheduled.isEmpty && unscheduledTasks.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _EmptyTimeline(
-                      onAdd: () => _openQuickAdd(context, mode: 'event'),
-                    ),
-                  )
-                else ...[
-                  if (allDay.isNotEmpty) ...[
-                    _sectionHeader('ALL DAY'),
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      sliver: SliverList.separated(
-                        itemCount: allDay.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, i) => _TimelineRow(
-                          item: allDay[i],
-                          onComplete: () => _complete(allDay[i]),
-                          onReschedule: (d) => _reschedule(allDay[i], d),
-                        ).animate().fadeIn(
-                              duration: 240.ms,
-                              delay: (40 * i).ms,
-                            ).slideY(begin: 0.06, end: 0),
-                      ),
-                    ),
-                    const SliverToBoxAdapter(child: SizedBox(height: 12)),
-                  ],
-
-                  if (scheduled.isNotEmpty)
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      sliver: SliverList.separated(
-                        itemCount: scheduled.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, i) => _TimelineRow(
-                          item: scheduled[i],
-                          onComplete: () => _complete(scheduled[i]),
-                          onReschedule: (d) => _reschedule(scheduled[i], d),
-                        ).animate().fadeIn(
-                              duration: 240.ms,
-                              delay: (40 * i).ms,
-                            ).slideY(begin: 0.06, end: 0),
-                      ),
-                    ),
-
-                  if (unscheduledTasks.isNotEmpty) ...[
-                    _sectionHeader('UNSCHEDULED'),
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      sliver: SliverList.separated(
-                        itemCount: unscheduledTasks.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, i) {
-                          final item = _TimelineItem.fromTask(unscheduledTasks[i]);
-                          return _TimelineRow(
-                            item: item,
-                            onComplete: () => _complete(item),
-                            onReschedule: (d) => _reschedule(item, d),
-                          ).animate().fadeIn(
-                                duration: 240.ms,
-                                delay: (40 * i).ms,
-                              ).slideY(begin: 0.06, end: 0);
-                        },
-                      ),
-                    ),
-                  ],
-                ],
-
-                // Footer strip
-                if (data.scorecard != null || data.mtdPoints > 0)
-                  SliverToBoxAdapter(child: _FooterStrip(data: data)),
-
-                const SliverToBoxAdapter(child: SizedBox(height: 96)),
-              ],
-            ),
+            ],
           ),
-
-          Positioned(
-            right: 16,
-            bottom: 16,
-            child: FloatingActionButton(
-              heroTag: 'today_fab',
-              onPressed: () => _openQuickAdd(context, mode: 'task'),
-              backgroundColor: brand.button,
-              foregroundColor: brand.onButton,
-              child: const Icon(Icons.add),
-            ),
-          ),
+          const SizedBox(height: 4),
+          if (unread.isEmpty)
+            const _EmptyTile(text: "You're all caught up.")
+          else
+            ...unread.map((n) => _NotifRow(item: n)),
         ],
       ),
     );
   }
 
-  Widget _horizonTab(_Horizon h, String label) {
-    final active = _horizon == h;
-    final brand = BrandColors.of(context);
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _horizon = h),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(vertical: 9),
-          decoration: BoxDecoration(
-            color: active ? brand.icon : Colors.transparent,
-            borderRadius: BorderRadius.circular(AppTheme.radius - 1),
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: active ? brand.onIcon : AppTheme.textSecondary(context),
-              ),
-            ),
-          ),
-        ),
-      ),
+  List<_ScheduleItem> _todaysEvents(DashboardProvider dash) {
+    // The unified /today payload exposes today's calendar events under the
+    // `today_appointments` card. We render whatever items it returns,
+    // permissively mapping common field aliases.
+    final card = dash.cards.firstWhere(
+      (c) => c.cardId == 'today_appointments',
+      orElse: () => const TodayCard(cardId: ''),
     );
+    final items = card.items.map(_ScheduleItem.fromMap).toList();
+    items.sort((a, b) {
+      final at = a.start, bt = b.start;
+      if (at == null && bt == null) return 0;
+      if (at == null) return 1;
+      if (bt == null) return -1;
+      return at.compareTo(bt);
+    });
+    return items;
   }
 
-  Widget _sectionHeader(String label) {
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.8,
-            color: AppTheme.textMuted(context),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openQuickAdd(BuildContext context, {required String mode}) async {
+  Future<void> _openEventSheet(
+      BuildContext context, _ScheduleItem event) async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => QuickAddSheet(initialMode: mode),
-    );
-  }
-
-  void _complete(_TimelineItem item) {
-    final dash = context.read<DashboardProvider>();
-    if (item.kind == _Kind.task) {
-      dash.completeTask(item.id);
-    } else {
-      dash.completeEvent(item.id);
-    }
-  }
-
-  void _reschedule(_TimelineItem item, int days) {
-    final dash = context.read<DashboardProvider>();
-    if (item.kind == _Kind.task) {
-      dash.rescheduleTask(item.id, days);
-    } else {
-      dash.rescheduleEvent(item.id, days);
-    }
-  }
-}
-
-enum _Kind { task, event }
-
-/// Merged row model — abstracts task vs event so the row widget stays simple.
-class _TimelineItem {
-  final _Kind kind;
-  final int id;
-  final String title;
-  final String? subtitle;
-  final String? pillar;
-  final String priority;
-  final String colour;
-  final DateTime sortAt;
-  final String? time;
-  final int? propertyId;
-  final int? dealId;
-  final int? contactId;
-
-  _TimelineItem({
-    required this.kind,
-    required this.id,
-    required this.title,
-    required this.priority,
-    required this.colour,
-    required this.sortAt,
-    this.subtitle,
-    this.pillar,
-    this.time,
-    this.propertyId,
-    this.dealId,
-    this.contactId,
-  });
-
-  factory _TimelineItem.fromEvent(CalendarEvent e) {
-    return _TimelineItem(
-      kind: _Kind.event,
-      id: e.id,
-      title: e.title,
-      priority: e.priority,
-      colour: e.colour,
-      sortAt: e.eventDate,
-      subtitle: e.propertyAddress ?? e.contactName,
-      pillar: e.effectivePillarTag,
-      time: e.allDay ? null : _fmtTime(e.eventDate),
-      propertyId: e.propertyId,
-      contactId: e.contactId,
-    );
-  }
-
-  factory _TimelineItem.fromTask(CommandTask t) {
-    return _TimelineItem(
-      kind: _Kind.task,
-      id: t.id,
-      title: t.title,
-      priority: t.priority,
-      colour: '#6b7280',
-      sortAt: t.dueDate ?? DateTime.now().add(const Duration(days: 3650)),
-      subtitle: t.propertyAddress ?? t.contactName,
-      pillar: t.effectivePillarTag,
-      time: t.dueDate != null ? _fmtTime(t.dueDate!) : null,
-      propertyId: t.propertyId,
-      dealId: t.dealId,
-      contactId: t.contactId,
-    );
-  }
-
-  static String _fmtTime(DateTime dt) =>
-      '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-}
-
-class _TimelineRow extends StatefulWidget {
-  final _TimelineItem item;
-  final VoidCallback onComplete;
-  final ValueChanged<int> onReschedule;
-
-  const _TimelineRow({
-    required this.item,
-    required this.onComplete,
-    required this.onReschedule,
-  });
-
-  @override
-  State<_TimelineRow> createState() => _TimelineRowState();
-}
-
-class _TimelineRowState extends State<_TimelineRow> {
-  bool _rescheduling = false;
-  int _days = 1;
-
-  Color get _stripe {
-    try {
-      return Color(int.parse(widget.item.colour.replaceFirst('#', '0xFF')));
-    } catch (_) {
-      return const Color(0xFF6b7280);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final item = widget.item;
-    final hasLink = hasPillarLink(
-      propertyId: item.propertyId,
-      dealId: item.dealId,
-      contactId: item.contactId,
-    );
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Dismissible(
-          key: ValueKey('${item.kind}-${item.id}'),
-          direction: DismissDirection.horizontal,
-          background: const _SwipeBg(
-            colour: Color(0xFF22c55e),
-            icon: Icons.check,
-            label: 'Done',
-            alignment: Alignment.centerLeft,
-          ),
-          secondaryBackground: _SwipeBg(
-            colour: AppTheme.brand,
-            icon: Icons.schedule,
-            label: 'Reschedule',
-            alignment: Alignment.centerRight,
-          ),
-          confirmDismiss: (dir) async {
-            if (dir == DismissDirection.startToEnd) {
-              widget.onComplete();
-            } else {
-              setState(() {
-                _rescheduling = !_rescheduling;
-                _days = 1;
-              });
+      backgroundColor: AppTheme.surface(context),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        final messenger = ScaffoldMessenger.of(context);
+        return _EventDetailSheet(
+          event: event,
+          onComplete: () async {
+            Navigator.of(sheetCtx).pop();
+            if (event.id == null) return;
+            try {
+              await ApiService().completeEvent(event.id!);
+            } catch (e) {
+              messenger.showSnackBar(
+                  SnackBar(content: Text('Complete failed: $e')));
+              return;
             }
-            return false;
+            if (mounted) _refresh();
           },
-          child: Material(
-            color: AppTheme.surface(context),
-            borderRadius: BorderRadius.circular(AppTheme.radius),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(AppTheme.radius),
-              onTap: hasLink
-                  ? () => navigateToPillar(
-                        context,
-                        propertyId: item.propertyId,
-                        dealId: item.dealId,
-                        contactId: item.contactId,
-                      )
-                  : null,
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(AppTheme.radius),
-                  border: Border.all(color: AppTheme.borderColor(context)),
-                ),
-                child: Row(
-                  children: [
-                    // Time column
-                    SizedBox(
-                      width: 46,
-                      child: Text(
-                        item.time ?? '—',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textSecondary(context),
-                        ),
-                      ),
-                    ),
-                    // Colour stripe
-                    Container(
-                      width: 3,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: _stripe,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            children: [
-                              PillarTagChip(pillar: item.pillar),
-                              if (item.priority == 'high' || item.priority == 'critical') ...[
-                                const SizedBox(width: 6),
-                                PriorityBadge(priority: item.priority),
-                              ],
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            item.title,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: AppTheme.textPrimary(context),
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if (item.subtitle != null) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              item.subtitle!,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: AppTheme.textSecondary(context),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-        if (_rescheduling) _buildReschedule(),
-      ],
-    );
-  }
-
-  Widget _buildReschedule() {
-    return Container(
-      margin: const EdgeInsets.only(top: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppTheme.brand.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-        border: Border.all(color: AppTheme.brand.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        children: [
-          Text('+ ',
-              style: TextStyle(fontSize: 13, color: AppTheme.textSecondary(context))),
-          _iconBtn(Icons.remove, () {
-            if (_days > 1) setState(() => _days--);
-          }),
-          SizedBox(
-            width: 40,
-            child: Center(
-              child: Text('$_days',
-                  style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textPrimary(context))),
-            ),
-          ),
-          _iconBtn(Icons.add, () {
-            if (_days < 90) setState(() => _days++);
-          }),
-          const SizedBox(width: 6),
-          Text(_days == 1 ? 'day' : 'days',
-              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary(context))),
-          const Spacer(),
-          TextButton(
-            onPressed: () => setState(() => _rescheduling = false),
-            child: Text('Cancel',
-                style: TextStyle(fontSize: 12, color: AppTheme.textMuted(context))),
-          ),
-          const SizedBox(width: 4),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.brand,
-              minimumSize: const Size(64, 36),
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-            ),
-            onPressed: () {
-              widget.onReschedule(_days);
-              setState(() => _rescheduling = false);
-            },
-            child: const Text('Save', style: TextStyle(fontSize: 12)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _iconBtn(IconData icon, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(4),
-      child: Padding(
-        padding: const EdgeInsets.all(4),
-        child: Icon(icon, size: 16, color: AppTheme.brand),
-      ),
+          onDismiss: () async {
+            Navigator.of(sheetCtx).pop();
+            if (event.id == null) return;
+            try {
+              await ApiService().dismissEvent(event.id!);
+            } catch (e) {
+              messenger.showSnackBar(
+                  SnackBar(content: Text('Dismiss failed: $e')));
+              return;
+            }
+            if (mounted) _refresh();
+          },
+        );
+      },
     );
   }
 }
 
-class _SwipeBg extends StatelessWidget {
-  final Color colour;
-  final IconData icon;
+class _SectionHeader extends StatelessWidget {
   final String label;
-  final Alignment alignment;
-
-  const _SwipeBg({
-    required this.colour,
-    required this.icon,
-    required this.label,
-    required this.alignment,
-  });
-
+  const _SectionHeader({required this.label});
   @override
   Widget build(BuildContext context) {
-    return Container(
-      alignment: alignment,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: BoxDecoration(
-        color: colour,
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: Colors.white, size: 16),
-          const SizedBox(width: 6),
-          Text(label,
-              style: const TextStyle(
-                  color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-        ],
+    return Text(
+      label,
+      style: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+        color: AppTheme.textSecondary(context),
+        letterSpacing: 0.4,
       ),
     );
   }
 }
 
-class _EmptyTimeline extends StatelessWidget {
-  final VoidCallback onAdd;
-  const _EmptyTimeline({required this.onAdd});
-
+class _EmptyTile extends StatelessWidget {
+  final String text;
+  const _EmptyTile({required this.text});
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 64, height: 64,
-              decoration: BoxDecoration(
-                color: AppTheme.surface2(context),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.wb_sunny_outlined,
-                  size: 30, color: AppTheme.textMuted(context)),
-            ),
-            const SizedBox(height: 16),
-            Text('Your day is clear.',
-                style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    color: AppTheme.textPrimary(context))),
-            const SizedBox(height: 16),
-            TextButton(
-              onPressed: onAdd,
-              style: TextButton.styleFrom(
-                backgroundColor: AppTheme.brand.withValues(alpha: 0.12),
-                foregroundColor: AppTheme.brand,
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-              ),
-              child: const Text('+ Add Event',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FooterStrip extends StatelessWidget {
-  final DashboardData data;
-  const _FooterStrip({required this.data});
-
-  @override
-  Widget build(BuildContext context) {
-    final sc = data.scorecard;
-    final target = data.monthlyTarget;
-    final pts = data.mtdPoints;
-    final pct = target > 0 ? (pts / target).clamp(0.0, 1.0) : 0.0;
-    final overTarget = pts >= target && target > 0;
-
     return Container(
-      margin: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 14),
       decoration: BoxDecoration(
         color: AppTheme.surface(context),
         borderRadius: BorderRadius.circular(AppTheme.radius),
         border: Border.all(color: AppTheme.borderColor(context)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              if (sc != null) ...[
-                _FooterMetric(label: 'Score', value: '${sc.overallScore}'),
-                _dot(context),
-                _FooterMetric(
-                    label: 'Tasks', value: '${sc.tasksCompleted}/${sc.tasksTotal}'),
-                _dot(context),
-              ],
-              _FooterMetric(label: 'Open', value: '${data.taskSummary.open}'),
-              const Spacer(),
-              // Placeholder for View Performance link — lands in PR 3.
-              Text('$pts / $target pts',
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: overTarget
-                          ? const Color(0xFF22c55e)
-                          : const Color(0xFFf59e0b))),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Container(
-            height: 4,
+      child: Center(
+        child: Text(text,
+            style: TextStyle(
+                fontSize: 13, color: AppTheme.textMuted(context))),
+      ),
+    );
+  }
+}
+
+class _EventRow extends StatelessWidget {
+  final _ScheduleItem event;
+  final VoidCallback onTap;
+  const _EventRow({required this.event, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = event.color ?? Theme.of(context).colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: AppTheme.surface(context),
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: AppTheme.surface2(context),
-              borderRadius: BorderRadius.circular(2),
+              borderRadius: BorderRadius.circular(AppTheme.radius),
+              border: Border.all(color: AppTheme.borderColor(context)),
             ),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: FractionallySizedBox(
-                widthFactor: pct,
-                child: Container(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 4,
+                  height: 44,
                   decoration: BoxDecoration(
-                    color:
-                        overTarget ? const Color(0xFF22c55e) : AppTheme.brand,
+                      color: accent, borderRadius: BorderRadius.circular(2)),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 58,
+                  child: Text(
+                    event.timeLabel,
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimary(context)),
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(event.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.textPrimary(context))),
+                      if (event.location != null &&
+                          event.location!.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Row(children: [
+                          Icon(Icons.place_outlined,
+                              size: 12,
+                              color: AppTheme.textMuted(context)),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(event.location!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color:
+                                        AppTheme.textSecondary(context))),
+                          ),
+                        ]),
+                      ],
+                    ],
+                  ),
+                ),
+                if (event.attendeesCount > 0) ...[
+                  const SizedBox(width: 8),
+                  Row(children: [
+                    Icon(Icons.people_outline,
+                        size: 13, color: AppTheme.textMuted(context)),
+                    const SizedBox(width: 2),
+                    Text('${event.attendeesCount}',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.textSecondary(context))),
+                  ]),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EventDetailSheet extends StatelessWidget {
+  final _ScheduleItem event;
+  final VoidCallback onComplete;
+  final VoidCallback onDismiss;
+  const _EventDetailSheet({
+    required this.event,
+    required this.onComplete,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = event.color ?? Theme.of(context).colorScheme.primary;
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppTheme.borderColor(context),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
-            ),
+              const SizedBox(height: 14),
+              Row(children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration:
+                      BoxDecoration(color: accent, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    event.title,
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 10),
+              _kv(context, Icons.schedule, event.fullTimeLabel),
+              if (event.location != null && event.location!.isNotEmpty)
+                _kv(context, Icons.place_outlined, event.location!),
+              if (event.eventClassName != null)
+                _kv(context, Icons.label_outline, event.eventClassName!),
+              if (event.attendeesCount > 0)
+                _kv(context, Icons.people_outline,
+                    '${event.attendeesCount} attendees'),
+              if (event.description != null &&
+                  event.description!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(event.description!,
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.textSecondary(context))),
+              ],
+              const SizedBox(height: 18),
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: event.id == null ? null : onDismiss,
+                    icon: const Icon(Icons.close, size: 16),
+                    label: const Text('Dismiss'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: event.id == null ? null : onComplete,
+                    icon: const Icon(Icons.check, size: 16),
+                    label: const Text('Complete'),
+                  ),
+                ),
+              ]),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _dot(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: Container(
-          width: 3, height: 3,
-          decoration: BoxDecoration(
-            color: AppTheme.textMuted(context),
-            shape: BoxShape.circle,
-          ),
+  Widget _kv(BuildContext context, IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        Icon(icon, size: 14, color: AppTheme.textMuted(context)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(text,
+              style: TextStyle(
+                  fontSize: 13, color: AppTheme.textPrimary(context))),
         ),
-      );
+      ]),
+    );
+  }
 }
 
-class _FooterMetric extends StatelessWidget {
-  final String label;
-  final String value;
-  const _FooterMetric({required this.label, required this.value});
+class _NotifRow extends StatelessWidget {
+  final NotificationItem item;
+  const _NotifRow({required this.item});
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text(value,
-            style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: AppTheme.textPrimary(context))),
-        const SizedBox(width: 4),
-        Text(label,
-            style: TextStyle(fontSize: 11, color: AppTheme.textMuted(context))),
-      ],
+    final accent = _severity(item.severity);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: AppTheme.surface(context),
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          onTap: () async {
+            final p = context.read<NotificationsProvider>();
+            await p.markRead(item.id);
+            if (!context.mounted) return;
+            final url = item.actionUrl ?? item.data['url']?.toString();
+            if (url != null && url.isNotEmpty) {
+              await DeepLinkRouter.open(context, url);
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppTheme.radius),
+              border: Border.all(color: accent.withValues(alpha: 0.35)),
+            ),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Icon(_iconFor(item.type),
+                  size: 18, color: accent),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(item.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.textPrimary(context))),
+                    if (item.body.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(item.body,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textSecondary(context))),
+                    ],
+                    const SizedBox(height: 4),
+                    Text(_relTime(item.createdAt),
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.textMuted(context))),
+                  ],
+                ),
+              ),
+            ]),
+          ),
+        ),
+      ),
     );
+  }
+
+  static Color _severity(String s) {
+    switch (s) {
+      case 'overdue':
+        return const Color(0xFFEF4444);
+      case 'warning':
+        return const Color(0xFFF59E0B);
+      default:
+        return const Color(0xFF3B82F6);
+    }
+  }
+
+  static IconData _iconFor(String type) {
+    final t = type.toLowerCase();
+    if (t.contains('task')) return Icons.checklist_rounded;
+    if (t.contains('event') || t.contains('calendar')) {
+      return Icons.calendar_today_rounded;
+    }
+    if (t.contains('invit')) return Icons.mail_outline;
+    if (t.contains('deal')) return Icons.handshake_outlined;
+    if (t.contains('property')) return Icons.home_outlined;
+    if (t.contains('contact')) return Icons.person_outline;
+    if (t.contains('overdue')) return Icons.warning_amber_rounded;
+    return Icons.notifications_outlined;
+  }
+
+  static String _relTime(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-'
+        '${dt.day.toString().padLeft(2, '0')}';
+  }
+}
+
+/// Normalised view of a today_appointments item — permissive on field names
+/// so it survives minor server-side renames.
+class _ScheduleItem {
+  final int? id;
+  final String title;
+  final DateTime? start;
+  final DateTime? end;
+  final bool allDay;
+  final String? location;
+  final String? description;
+  final String? eventClassName;
+  final Color? color;
+  final int attendeesCount;
+
+  const _ScheduleItem({
+    this.id,
+    required this.title,
+    this.start,
+    this.end,
+    this.allDay = false,
+    this.location,
+    this.description,
+    this.eventClassName,
+    this.color,
+    this.attendeesCount = 0,
+  });
+
+  factory _ScheduleItem.fromMap(Map<String, dynamic> m) {
+    int? toInt(dynamic v) =>
+        v is num ? v.toInt() : (v is String ? int.tryParse(v) : null);
+    DateTime? toDate(dynamic v) {
+      if (v == null) return null;
+      final s = v.toString();
+      return DateTime.tryParse(s)?.toLocal();
+    }
+
+    Color? toColor(dynamic v) {
+      if (v == null) return null;
+      var s = v.toString().trim();
+      if (s.startsWith('#')) s = s.substring(1);
+      if (s.length == 6) s = 'FF$s';
+      final n = int.tryParse(s, radix: 16);
+      return n == null ? null : Color(n);
+    }
+
+    final ec = m['event_class'];
+    final ecMap = ec is Map ? Map<String, dynamic>.from(ec) : null;
+
+    final attendees = m['attendees'];
+    int attCount = 0;
+    if (attendees is List) {
+      attCount = attendees.length;
+    } else if (m['attendees_count'] is num) {
+      attCount = (m['attendees_count'] as num).toInt();
+    }
+
+    return _ScheduleItem(
+      id: toInt(m['id'] ?? m['event_id']),
+      title: (m['title'] ?? m['name'] ?? m['label'] ?? '(untitled)').toString(),
+      start: toDate(m['starts_at'] ?? m['start'] ?? m['event_date'] ?? m['time']),
+      end: toDate(m['ends_at'] ?? m['end'] ?? m['end_date']),
+      allDay: m['all_day'] == true,
+      location:
+          (m['location'] ?? m['property_address'] ?? m['address'])?.toString(),
+      description: m['description']?.toString(),
+      eventClassName: (ecMap?['name'] ?? m['event_class_name'] ?? m['category'])
+          ?.toString(),
+      color: toColor(ecMap?['color'] ?? m['color'] ?? m['colour']),
+      attendeesCount: attCount,
+    );
+  }
+
+  String get timeLabel {
+    if (allDay) return 'All day';
+    final s = start;
+    if (s == null) return '';
+    return '${s.hour.toString().padLeft(2, '0')}:'
+        '${s.minute.toString().padLeft(2, '0')}';
+  }
+
+  String get fullTimeLabel {
+    if (allDay) return 'All day';
+    final s = start;
+    if (s == null) return '';
+    String fmt(DateTime d) =>
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-'
+        '${d.day.toString().padLeft(2, '0')} '
+        '${d.hour.toString().padLeft(2, '0')}:'
+        '${d.minute.toString().padLeft(2, '0')}';
+    if (end != null) return '${fmt(s)} – ${fmt(end!)}';
+    return fmt(s);
   }
 }
