@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../theme.dart';
 import '../../models/property.dart';
+import '../../models/visibility.dart';
 import '../../providers/property_provider.dart';
+import '../../providers/visibility_provider.dart';
+import '../../widgets/agent_filter_bar.dart';
 import 'property_create_screen.dart';
 import 'property_edit_screen.dart';
 import 'property_overview_screen.dart';
@@ -37,6 +40,21 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  /// Pull-to-refresh re-pulls visibility (resets the agent filter to Mine
+  /// per spec), then reloads the list with that reset filter.
+  Future<void> _refresh() async {
+    await context.read<VisibilityProvider>().refresh();
+    if (!mounted) return;
+    await context
+        .read<PropertyProvider>()
+        .fetchProperties(agentFilter: AgentFilter.mine);
+  }
+
+  void _onAgentFilterChanged(AgentFilter f) {
+    context.read<VisibilityProvider>().setPropertiesFilter(f);
+    context.read<PropertyProvider>().fetchProperties(agentFilter: f);
   }
 
   int get _activeFilterCount {
@@ -396,6 +414,12 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
                 ],
               ),
             ),
+          AgentFilterBar(
+            noun: 'Properties',
+            module: context.watch<VisibilityProvider>().properties,
+            selected: context.watch<VisibilityProvider>().propertiesFilter,
+            onChanged: _onAgentFilterChanged,
+          ),
           Expanded(
             child: provider.isLoading && all.isEmpty
                 ? const Center(child: CircularProgressIndicator())
@@ -404,7 +428,7 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
                     : filtered.isEmpty
                         ? _buildNoMatches()
                         : RefreshIndicator(
-                            onRefresh: provider.fetchProperties,
+                            onRefresh: _refresh,
                             child: ListView.builder(
                               padding: const EdgeInsets.all(16),
                               itemCount: filtered.length,

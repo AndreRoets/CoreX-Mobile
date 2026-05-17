@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../models/property_compliance.dart';
 import '../../models/property_overview.dart';
 import '../../services/api_service.dart';
 import '../../theme.dart';
+import 'add_contact_sheet.dart';
 import 'property_edit_screen.dart';
 
 class PropertyOverviewScreen extends StatefulWidget {
@@ -22,7 +24,10 @@ class PropertyOverviewScreen extends StatefulWidget {
 class _PropertyOverviewScreenState extends State<PropertyOverviewScreen> {
   late final ApiService _api = widget.api ?? ApiService();
   PropertyOverview? _data;
+  PropertyCompliance? _compliance;
+  List<PropertyContact>? _contacts;
   bool _loading = true;
+  bool _sending = false;
   String? _error;
   bool _descExpanded = false;
 
@@ -45,6 +50,7 @@ class _PropertyOverviewScreenState extends State<PropertyOverviewScreen> {
         _data = d;
         _loading = false;
       });
+      _loadComplianceAndContacts();
     } on ApiException catch (e) {
       if (!mounted) return;
       if (e.statusCode == 403) {
@@ -72,6 +78,126 @@ class _PropertyOverviewScreenState extends State<PropertyOverviewScreen> {
     final uri = Uri.tryParse(url);
     if (uri == null) return;
     await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  /// The document / FICA / photo flows live on the web — open them in an
+  /// in-app browser so the agent stays inside the app.
+  Future<void> _openWeb(String? url) async {
+    if (url == null || url.isEmpty) return;
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+  }
+
+  Future<void> _loadComplianceAndContacts() async {
+    final results = await Future.wait([
+      _api.getPropertyCompliance(widget.propertyId).then<Object?>(
+          (v) => v, onError: (_) => null),
+      _api.getPropertyContacts(widget.propertyId).then<Object?>(
+          (v) => v, onError: (_) => null),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      if (results[0] is PropertyCompliance) {
+        _compliance = results[0] as PropertyCompliance;
+      }
+      if (results[1] is List<PropertyContact>) {
+        _contacts = results[1] as List<PropertyContact>;
+      }
+    });
+  }
+
+  Future<void> _refreshCompliance() async {
+    try {
+      final c = await _api.getPropertyCompliance(widget.propertyId);
+      if (mounted) setState(() => _compliance = c);
+    } catch (_) {/* keep last good state */}
+  }
+
+  Future<void> _sendToMarket() async {
+    setState(() => _sending = true);
+    try {
+      final c = await _api.sendToMarket(widget.propertyId);
+      if (!mounted) return;
+      setState(() {
+        _compliance = c;
+        _sending = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Property sent to market.')),
+      );
+      _load(forceRefresh: true);
+    } on MarketingBlockedException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _compliance = e.report;
+        _sending = false;
+      });
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _sending = false);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _sending = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to send to market.')),
+      );
+    }
+  }
+
+  Future<void> _addContact() async {
+    final added = await AddContactSheet.show(
+      context,
+      propertyId: widget.propertyId,
+      api: _api,
+    );
+    if (added && mounted) {
+      // Linking a seller + their FICA affects the fica_sellers gate.
+      await Future.wait([
+        _api.getPropertyContacts(widget.propertyId).then(
+            (v) => mounted ? setState(() => _contacts = v) : null,
+            onError: (_) {}),
+        _refreshCompliance(),
+      ]);
+    }
+  }
+
+  Future<void> _unlinkContact(PropertyContact c) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Unlink contact'),
+        content: Text(
+            'Remove ${c.fullName} from this property? This only removes the link — the contact is kept.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Unlink')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await _api.deletePropertyContact(widget.propertyId, c.id);
+      if (!mounted) return;
+      await Future.wait([
+        _api.getPropertyContacts(widget.propertyId).then(
+            (v) => mounted ? setState(() => _contacts = v) : null,
+            onError: (_) {}),
+        _refreshCompliance(),
+      ]);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 
   @override
@@ -114,6 +240,16 @@ class _PropertyOverviewScreenState extends State<PropertyOverviewScreen> {
         _hero(p),
         const SizedBox(height: 16),
         _atAGlance(p),
+        const SizedBox(height: 16),
+        if (_compliance != null) ...[
+          _sectionTitle('Compliance'),
+          const SizedBox(height: 8),
+          _complianceCard(_compliance!),
+          const SizedBox(height: 16),
+        ],
+        _sectionTitle('Contacts'),
+        const SizedBox(height: 8),
+        _contactsCard(),
         const SizedBox(height: 16),
         if ((p.description ?? '').isNotEmpty) ...[
           _sectionTitle('Description'),
@@ -629,6 +765,410 @@ class _PropertyOverviewScreenState extends State<PropertyOverviewScreen> {
     if (diff.inDays < 30) return '${(diff.inDays / 7).floor()}w ago';
     if (diff.inDays < 365) return '${(diff.inDays / 30).floor()}mo ago';
     return '${(diff.inDays / 365).floor()}y ago';
+  }
+
+  String _fmtDate(String? iso) {
+    if (iso == null || iso.isEmpty) return '';
+    final dt = DateTime.tryParse(iso);
+    if (dt == null) return iso;
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final l = dt.toLocal();
+    return '${l.day} ${months[l.month - 1]} ${l.year}';
+  }
+
+  /// Some gate actions route to fixed web flows rather than the backend's
+  /// `action_url`. The authority/mandate gate opens the e-sign creator for
+  /// this property; the seller-FICA gate opens the FICA creator.
+  String? _overrideActionUrl(String gateKey) {
+    switch (gateKey) {
+      case 'authority_to_market':
+        return 'http://91.99.130.85:8084/docuperfect/esign/create'
+            '?property_id=${widget.propertyId}&template_type=mandate';
+      case 'fica_sellers':
+        return 'http://91.99.130.85:8084/corex/compliance/fica/create';
+      default:
+        return null;
+    }
+  }
+
+  ComplianceNextAction? _actionFor(PropertyCompliance c, String gateKey) {
+    // Map a gate to its matching next_action. The backend keys the action by
+    // label text, so fall back to a fuzzy contains-match on the gate label.
+    final label = kComplianceGateLabels[gateKey] ?? gateKey;
+    for (final a in c.nextActions) {
+      final l = a.label.toLowerCase();
+      if (gateKey == 'photos' && l.contains('photo')) return a;
+      if (gateKey == 'fica_sellers' && l.contains('fica')) return a;
+      if (gateKey == 'authority_to_market' &&
+          (l.contains('authority') ||
+              l.contains('mandate') ||
+              l.contains('market'))) {
+        return a;
+      }
+      if (gateKey == 'details_complete' &&
+          (l.contains('detail') || l.contains('listing'))) {
+        return a;
+      }
+      if (l.contains(label.toLowerCase())) return a;
+    }
+    return null;
+  }
+
+  Widget _ficaBadge(String? status, bool passed) {
+    final color = passed ? Colors.green : Colors.orange;
+    final text = passed
+        ? 'FICA approved'
+        : 'FICA ${(status ?? 'pending').replaceAll('_', ' ')}';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(text,
+          style: TextStyle(
+              color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+    );
+  }
+
+  Widget _roleBadge(String? role) {
+    if (role == null || role.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppTheme.brand.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(role,
+          style: TextStyle(
+              color: AppTheme.brand,
+              fontSize: 11,
+              fontWeight: FontWeight.w700)),
+    );
+  }
+
+  Widget _complianceCard(PropertyCompliance c) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (c.isLive)
+              _liveBanner(c)
+            else ...[
+              for (final gate in c.checklist) _gateRow(c, gate),
+              if (c.photos != null) ...[
+                const SizedBox(height: 10),
+                _photosChip(c.photos!),
+              ],
+            ],
+            if (c.sellers.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Text('Sellers',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textSecondary(context))),
+              const SizedBox(height: 6),
+              for (final s in c.sellers) _sellerRow(s),
+            ],
+            if (!c.isLive) ...[
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: _sending
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child:
+                              CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.send, size: 18),
+                  label: const Text('Send Authority to Market'),
+                  onPressed:
+                      (c.ready && !_sending) ? _sendToMarket : null,
+                ),
+              ),
+              if (!c.ready)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Resolve the items above to enable sending to market.',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary(context)),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _liveBanner(PropertyCompliance c) {
+    final date = _fmtDate(c.snapshotAt);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.green.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle, color: Colors.green, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              date.isEmpty ? 'Live' : 'Live · Sent to market on $date',
+              style: const TextStyle(
+                  color: Colors.green,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _gateRow(PropertyCompliance c, ComplianceGate gate) {
+    final action = gate.passed ? null : _actionFor(c, gate.key);
+    final overrideUrl = gate.passed ? null : _overrideActionUrl(gate.key);
+    // Prefer the fixed web flow for gates that have one, keeping the
+    // backend's button label when it supplied a matching action.
+    final actionUrl = overrideUrl ?? action?.actionUrl;
+    final actionLabel = action?.label ??
+        (gate.key == 'authority_to_market'
+            ? 'Send mandate for signature'
+            : gate.key == 'fica_sellers'
+                ? 'Start seller FICA'
+                : 'Resolve');
+    final color = gate.passed ? Colors.green : Colors.orange;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                  gate.passed
+                      ? Icons.check_circle
+                      : Icons.error_outline,
+                  size: 18,
+                  color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      kComplianceGateLabels[gate.key] ?? gate.key,
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textPrimary(context)),
+                    ),
+                    if (gate.detail.isNotEmpty)
+                      Text(gate.detail,
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textSecondary(context))),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (actionUrl != null && actionUrl.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 26, top: 6),
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.open_in_new, size: 15),
+                label: Text(actionLabel),
+                onPressed: () => _openWeb(actionUrl),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _photosChip(CompliancePhotos p) {
+    final ok = p.passed;
+    final color = ok ? Colors.green : Colors.orange;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.photo_library_outlined, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text('${p.count}/${p.required} photos',
+              style: TextStyle(
+                  color: color,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+
+  Widget _sellerRow(ComplianceSeller s) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(s.name,
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimary(context))),
+                if ((s.role ?? '').isNotEmpty)
+                  Text(s.role!,
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary(context))),
+              ],
+            ),
+          ),
+          _ficaBadge(s.ficaStatus, s.ficaPassed),
+        ],
+      ),
+    );
+  }
+
+  Widget _contactsCard() {
+    final contacts = _contacts;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (contacts == null)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(8),
+                  child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child:
+                          CircularProgressIndicator(strokeWidth: 2)),
+                ),
+              )
+            else if (contacts.isEmpty)
+              Text('No contacts linked yet.',
+                  style:
+                      TextStyle(color: AppTheme.textSecondary(context)))
+            else
+              for (var i = 0; i < contacts.length; i++) ...[
+                if (i > 0) const Divider(height: 18),
+                _propertyContactRow(contacts[i]),
+              ],
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.person_add_alt, size: 18),
+                label: const Text('Add contact'),
+                onPressed: _addContact,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _propertyContactRow(PropertyContact c) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(c.fullName,
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.textPrimary(context))),
+                  ),
+                  const SizedBox(width: 8),
+                  _roleBadge(c.role ?? c.type),
+                ],
+              ),
+              if ((c.phone ?? '').isNotEmpty)
+                InkWell(
+                  onTap: () => _open('tel:${c.phone}'),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(children: [
+                      Icon(Icons.phone, size: 14, color: AppTheme.brand),
+                      const SizedBox(width: 6),
+                      Text(c.phone!,
+                          style: TextStyle(
+                              color: AppTheme.brand,
+                              fontWeight: FontWeight.w500,
+                              fontSize: 13)),
+                    ]),
+                  ),
+                ),
+              if ((c.email ?? '').isNotEmpty)
+                InkWell(
+                  onTap: () => _open('mailto:${c.email}'),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(children: [
+                      Icon(Icons.email_outlined,
+                          size: 14, color: AppTheme.brand),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(c.email!,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: AppTheme.brand,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 13)),
+                      ),
+                    ]),
+                  ),
+                ),
+              if ((c.ficaStatus ?? '').isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: _ficaBadge(c.ficaStatus,
+                      c.ficaStatus?.toLowerCase() == 'approved'),
+                ),
+            ],
+          ),
+        ),
+        IconButton(
+          tooltip: 'Unlink',
+          icon: Icon(Icons.link_off,
+              size: 18, color: AppTheme.textMuted(context)),
+          onPressed: () => _unlinkContact(c),
+        ),
+      ],
+    );
   }
 
   Widget _sectionTitle(String text) => Padding(

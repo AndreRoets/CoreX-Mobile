@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/property.dart';
+import '../models/visibility.dart';
 import '../services/api_service.dart';
 
 class PropertyProvider extends ChangeNotifier {
@@ -15,12 +16,17 @@ class PropertyProvider extends ChangeNotifier {
   /// to highlight individual fields with their server-side message.
   Map<String, String> fieldErrors = const {};
 
-  Future<void> fetchProperties() async {
+  /// Last filter used, so background refreshes (returning from a detail
+  /// screen) keep the agent the user is viewing.
+  AgentFilter _agentFilter = AgentFilter.mine;
+
+  Future<void> fetchProperties({AgentFilter? agentFilter}) async {
+    if (agentFilter != null) _agentFilter = agentFilter;
     isLoading = true;
     error = null;
     notifyListeners();
     try {
-      properties = await _api.getProperties();
+      properties = await _api.getProperties(agentFilter: _agentFilter);
     } catch (e) {
       error = e.toString();
     }
@@ -34,6 +40,13 @@ class PropertyProvider extends ChangeNotifier {
     notifyListeners();
     try {
       selectedProperty = await _api.getProperty(id);
+    } on ApiException catch (e) {
+      selectedProperty = null;
+      error = e.message;
+      isLoading = false;
+      notifyListeners();
+      // Let the screen decide how to surface 403 / not-found (toast + pop).
+      rethrow;
     } catch (e) {
       error = e.toString();
     }

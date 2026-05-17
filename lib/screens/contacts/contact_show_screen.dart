@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../models/contact.dart';
 import '../../services/api_service.dart';
 import '../../theme.dart';
+import 'contact_compliance_screen.dart';
 import 'edit_contact_screen.dart';
 import 'new_match_screen.dart';
 import 'role_picker_sheet.dart';
@@ -44,6 +45,19 @@ class _ContactShowScreenState extends State<ContactShowScreen> {
       if (!mounted) return;
       setState(() {
         _contact = c;
+        _loading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (e.statusCode == 403) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message)),
+        );
+        Navigator.of(context).pop();
+        return;
+      }
+      setState(() {
+        _error = e.message;
         _loading = false;
       });
     } catch (e) {
@@ -146,6 +160,8 @@ class _ContactShowScreenState extends State<ContactShowScreen> {
         _primaryAction(),
         const SizedBox(height: 8),
         _secondaryActions(),
+        const SizedBox(height: 24),
+        _complianceTile(),
         const SizedBox(height: 24),
         _sectionTitle('Matches'),
         const SizedBox(height: 8),
@@ -498,6 +514,73 @@ class _ContactShowScreenState extends State<ContactShowScreen> {
                     size: 18, color: AppTheme.textMuted(context)),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _complianceTile() {
+    return Material(
+      color: AppTheme.surface(context),
+      borderRadius: BorderRadius.circular(AppTheme.radius),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        onTap: () {
+          final c = _contact;
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ContactComplianceScreen(
+                contactId: widget.contactId,
+                contactName: c?.fullName,
+              ),
+            ),
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppTheme.radius),
+            border: Border.all(color: AppTheme.borderColor(context)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppTheme.brand.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.verified_user_rounded,
+                    color: AppTheme.brand, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Compliance',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimary(context),
+                      ),
+                    ),
+                    Text(
+                      'Consent · Documents · FICA',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded,
+                  size: 18, color: AppTheme.textMuted(context)),
+            ],
           ),
         ),
       ),

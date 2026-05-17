@@ -6,17 +6,21 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/env.dart';
 import '../models/contact.dart';
+import '../models/contact_compliance.dart';
 import '../models/core_match.dart';
 import '../models/dashboard_data.dart';
 import '../models/gallery_tags.dart';
 import '../models/notification_models.dart';
+import '../models/p24_location.dart';
 import '../models/property.dart';
+import '../models/property_compliance.dart';
 import '../models/property_options.dart';
 import '../models/property_overview.dart';
 import '../models/branding.dart';
 import '../models/space.dart';
 import '../models/task_extras.dart';
 import '../models/today_card.dart';
+import '../models/visibility.dart';
 
 class ApiService {
   static String get baseUrl => Env.apiBaseUrl;
@@ -79,6 +83,23 @@ class ApiService {
       return jsonDecode(response.body);
     }
     throw ApiException(response.statusCode, 'Login failed');
+  }
+
+  // --- Agent visibility ---
+
+  /// `GET /mobile/visibility` — per-module data-visibility descriptor.
+  /// Throws on any non-200 so the caller can apply its safe fallback.
+  Future<VisibilityDescriptor> getVisibility() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/mobile/visibility'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      return VisibilityDescriptor.fromJson(
+          Map<String, dynamic>.from(jsonDecode(response.body) as Map));
+    }
+    throw ApiException(response.statusCode, 'Failed to load visibility');
   }
 
   // --- Branding ---
@@ -878,9 +899,16 @@ class ApiService {
     throw ApiException(response.statusCode, 'Failed to load property options');
   }
 
-  Future<List<Property>> getProperties() async {
+  Future<List<Property>> getProperties({AgentFilter? agentFilter}) async {
+    final agentValue = agentFilter?.queryValue;
+    final uri = Uri.parse('$baseUrl/mobile/properties').replace(
+      queryParameters: {
+        // Mine → omitted; All → '' ; specific agent → '<id>'.
+        if (agentValue != null) 'agent_id': agentValue,
+      },
+    );
     final response = await http.get(
-      Uri.parse('$baseUrl/mobile/properties'),
+      agentValue != null ? uri : Uri.parse('$baseUrl/mobile/properties'),
       headers: await _headers(),
     ).timeout(_timeout);
 
@@ -902,8 +930,42 @@ class ApiService {
       final data = jsonDecode(response.body);
       return Property.fromJson(data['property']);
     }
+    if (response.statusCode == 403) {
+      throw ApiException(403, _scopeForbiddenMessage(response.body));
+    }
     throw ApiException(response.statusCode, 'Failed to load property');
   }
+
+  // --- Property24 location cascade ---
+
+  Future<List<P24Location>> _getP24(String path, Map<String, String> qp) async {
+    final uri = Uri.parse('$baseUrl/mobile/p24/$path')
+        .replace(queryParameters: {
+      for (final e in qp.entries)
+        if (e.value.isNotEmpty) e.key: e.value,
+    });
+    final response =
+        await http.get(uri, headers: await _headers()).timeout(_timeout);
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final list = (data['data'] as List?) ?? const [];
+      return list
+          .map((e) => P24Location.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    throw ApiException(response.statusCode, 'Failed to load $path');
+  }
+
+  Future<List<P24Location>> getP24Provinces({String q = ''}) =>
+      _getP24('provinces', {'q': q});
+
+  Future<List<P24Location>> getP24Cities(
+          {required int provinceId, String q = ''}) =>
+      _getP24('cities', {'province_id': '$provinceId', 'q': q});
+
+  Future<List<P24Location>> getP24Suburbs(
+          {required int cityId, String q = ''}) =>
+      _getP24('suburbs', {'city_id': '$cityId', 'q': q});
 
   Future<Property> createProperty(Map<String, dynamic> data) async {
     final reqBody = jsonEncode(data);
@@ -1153,6 +1215,139 @@ class ApiService {
 
   void invalidateOverviewCache(int id) => _overviewCache.remove(id);
 
+  // --- Property Compliance ---
+
+  Future<PropertyCompliance> getPropertyCompliance(int id) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/mobile/properties/$id/compliance'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      return PropertyCompliance.fromJson(
+          Map<String, dynamic>.from(jsonDecode(response.body) as Map));
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(403, "You don't have access to this property");
+    }
+    throw ApiException(response.statusCode, 'Failed to load compliance');
+  }
+
+  /// "Send Authority to Market". Clears the property and makes it
+  /// marketable. Throws [MarketingBlockedException] on a 422
+  /// `marketing_blocked` response so the caller can re-render the gates.
+  Future<PropertyCompliance> sendToMarket(int id) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/mobile/properties/$id/compliance/send-to-market'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      // The success body is a thin confirmation; refetch the full report so
+      // the live banner has snapshot_at/first_marketed_at + checklist.
+      invalidateOverviewCache(id);
+      return getPropertyCompliance(id);
+    }
+    if (response.statusCode == 422) {
+      Map<String, dynamic> body = const {};
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map) body = Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+      throw MarketingBlockedException(
+        body['message']?.toString() ??
+            'Marketing is blocked — property not compliance-ready.',
+        (body['blocked_by'] as List? ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+        PropertyCompliance.fromBlockedReport(id, body),
+      );
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(
+          403, "You don't have permission to market this property");
+    }
+    throw ApiException(response.statusCode, 'Failed to send to market');
+  }
+
+  // --- Property Contacts ---
+
+  Future<List<PropertyContact>> getPropertyContacts(int id) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/mobile/properties/$id/contacts'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      final list = body is Map ? (body['contacts'] as List? ?? []) : [];
+      return list
+          .whereType<Map>()
+          .map((e) => PropertyContact.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(403, "You don't have access to this property");
+    }
+    throw ApiException(response.statusCode, 'Failed to load contacts');
+  }
+
+  /// Link an existing contact (pass `contact_id`) or create + link a new one.
+  /// Throws [DuplicateContactException] on a 422 carrying `duplicate_id`.
+  Future<void> addPropertyContact(int id, Map<String, dynamic> body) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/mobile/properties/$id/contacts'),
+      headers: await _headers(),
+      body: jsonEncode(body),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      invalidateOverviewCache(id);
+      return;
+    }
+    if (response.statusCode == 422) {
+      try {
+        final json = jsonDecode(response.body);
+        if (json is Map && json['duplicate_id'] != null) {
+          final dup = json['duplicate_id'];
+          final dupId =
+              dup is num ? dup.toInt() : int.tryParse(dup.toString()) ?? 0;
+          throw DuplicateContactException(
+              dupId,
+              json['message']?.toString() ??
+                  'A contact with that phone or email already exists');
+        }
+      } catch (e) {
+        if (e is DuplicateContactException) rethrow;
+      }
+      throw _parseValidationError(response.body);
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(
+          403, "You don't have permission to edit this property");
+    }
+    throw ApiException(
+        response.statusCode, _serverErrorMessage(response.body, 'link contact'));
+  }
+
+  /// Unlinks (does not delete) a contact from a property.
+  Future<void> deletePropertyContact(int id, int contactId) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/mobile/properties/$id/contacts/$contactId'),
+      headers: await _headers(),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200 || response.statusCode == 204) {
+      invalidateOverviewCache(id);
+      return;
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(
+          403, "You don't have permission to edit this property");
+    }
+    throw ApiException(response.statusCode, 'Failed to unlink contact');
+  }
+
   // --- Gallery Tags (custom tag CRUD) ---
 
   Future<GalleryTagsData> addGalleryTag(int propertyId, String tag) async {
@@ -1291,10 +1486,18 @@ class ApiService {
 
   // --- Contacts ---
 
-  Future<List<Contact>> listContacts({String? search, int perPage = 50}) async {
+  Future<List<Contact>> listContacts({
+    String? search,
+    int perPage = 50,
+    AgentFilter? agentFilter,
+  }) async {
+    final agentValue = agentFilter?.queryValue;
     final qp = <String, String>{
       'per_page': '$perPage',
       if (search != null && search.isNotEmpty) 'search': search,
+      // Mine → queryValue is null → param omitted.
+      // All → '' ; specific agent → '<id>'.
+      if (agentValue != null) 'agent_id': agentValue,
     };
     final uri = Uri.parse('$baseUrl/mobile/contacts').replace(queryParameters: qp);
     final response = await http.get(uri, headers: await _headers()).timeout(_timeout);
@@ -1325,7 +1528,229 @@ class ApiService {
           : Map<String, dynamic>.from(body as Map);
       return Contact.fromJson(map);
     }
+    if (response.statusCode == 403) {
+      throw ApiException(403, _scopeForbiddenMessage(response.body));
+    }
     throw ApiException(response.statusCode, 'Failed to load contact');
+  }
+
+  /// 403 body → server `message`, defaulting to the agreed visibility copy.
+  String _scopeForbiddenMessage(String body) {
+    try {
+      final json = jsonDecode(body);
+      if (json is Map && json['message'] is String) {
+        final m = (json['message'] as String).trim();
+        if (m.isNotEmpty) return m;
+      }
+    } catch (_) {}
+    return 'Outside your visibility scope';
+  }
+
+  // --- Contact compliance (Consent / Drive / FICA) ---
+
+  /// Pulls the server `message` out of a 403 body, defaulting to the
+  /// agreed "Not your contact." copy when the agent doesn't own the contact.
+  String _forbiddenMessage(String body) {
+    try {
+      final json = jsonDecode(body);
+      if (json is Map && json['message'] is String) {
+        final m = (json['message'] as String).trim();
+        if (m.isNotEmpty) return m;
+      }
+    } catch (_) {}
+    return 'Not your contact.';
+  }
+
+  Future<ContactConsentData> getContactConsent(int id) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/mobile/contacts/$id/consent'),
+            headers: await _headers())
+        .timeout(_timeout);
+    if (response.statusCode == 200) {
+      return ContactConsentData.fromJson(
+          Map<String, dynamic>.from(jsonDecode(response.body) as Map));
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(403, _forbiddenMessage(response.body));
+    }
+    throw ApiException(response.statusCode, 'Failed to load consent');
+  }
+
+  Future<ContactConsentData> giveContactConsent(
+      int id, String consentType, String method) async {
+    final response = await http
+        .post(Uri.parse('$baseUrl/mobile/contacts/$id/consent'),
+            headers: await _headers(),
+            body: jsonEncode({'consent_type': consentType, 'method': method}))
+        .timeout(_timeout);
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return ContactConsentData.fromJson(
+          Map<String, dynamic>.from(jsonDecode(response.body) as Map));
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(403, _forbiddenMessage(response.body));
+    }
+    if (response.statusCode == 422) throw _parseValidationError(response.body);
+    throw ApiException(
+        response.statusCode, _serverErrorMessage(response.body, 'give consent'));
+  }
+
+  Future<ContactConsentData> revokeContactConsent(int id, String consentType,
+      {String? reason}) async {
+    final response = await http
+        .post(Uri.parse('$baseUrl/mobile/contacts/$id/consent/revoke'),
+            headers: await _headers(),
+            body: jsonEncode({
+              'consent_type': consentType,
+              if (reason != null && reason.isNotEmpty) 'reason': reason,
+            }))
+        .timeout(_timeout);
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return ContactConsentData.fromJson(
+          Map<String, dynamic>.from(jsonDecode(response.body) as Map));
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(403, _forbiddenMessage(response.body));
+    }
+    if (response.statusCode == 422) throw _parseValidationError(response.body);
+    throw ApiException(response.statusCode,
+        _serverErrorMessage(response.body, 'revoke consent'));
+  }
+
+  Future<ContactDriveData> getContactDrive(int id) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/mobile/contacts/$id/drive'),
+            headers: await _headers())
+        .timeout(_timeout);
+    if (response.statusCode == 200) {
+      return ContactDriveData.fromJson(
+          Map<String, dynamic>.from(jsonDecode(response.body) as Map));
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(403, _forbiddenMessage(response.body));
+    }
+    throw ApiException(response.statusCode, 'Failed to load documents');
+  }
+
+  /// Uploads a document (multipart). [documentTypeId] / [propertyId] optional.
+  Future<DriveDoc> uploadContactDocument(int id, File file,
+      {int? documentTypeId, int? propertyId}) async {
+    final token = await getToken();
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/mobile/contacts/$id/drive'),
+    );
+    request.headers['Accept'] = 'application/json';
+    if (token != null) request.headers['Authorization'] = 'Bearer $token';
+    request.files.add(await http.MultipartFile.fromPath('file', file.path));
+    if (documentTypeId != null) {
+      request.fields['document_type_id'] = '$documentTypeId';
+    }
+    if (propertyId != null) request.fields['property_id'] = '$propertyId';
+
+    final streamed = await request.send().timeout(_timeout);
+    final body = await streamed.stream.bytesToString();
+    final status = streamed.statusCode;
+
+    if (status == 200 || status == 201) {
+      final json = jsonDecode(body);
+      final doc = json is Map && json['document'] is Map
+          ? Map<String, dynamic>.from(json['document'])
+          : Map<String, dynamic>.from(json as Map);
+      return DriveDoc.fromJson(doc);
+    }
+    if (status == 403) throw ApiException(403, _forbiddenMessage(body));
+    if (status == 422) throw _parseValidationError(body);
+    throw ApiException(status, _serverErrorMessage(body, 'upload document'));
+  }
+
+  /// Re-tag / (un)link a document. Pass [unlinkProperty] true to send
+  /// `property_id: null` (server unlinks from the property).
+  Future<DriveDoc> updateContactDocument(int id, int docId,
+      {int? documentTypeId,
+      int? propertyId,
+      bool unlinkProperty = false}) async {
+    final payload = <String, dynamic>{
+      if (documentTypeId != null) 'document_type_id': documentTypeId,
+      if (unlinkProperty)
+        'property_id': null
+      else if (propertyId != null)
+        'property_id': propertyId,
+    };
+    final response = await http
+        .put(Uri.parse('$baseUrl/mobile/contacts/$id/drive/$docId'),
+            headers: await _headers(), body: jsonEncode(payload))
+        .timeout(_timeout);
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body);
+      final doc = json is Map && json['document'] is Map
+          ? Map<String, dynamic>.from(json['document'])
+          : Map<String, dynamic>.from(json as Map);
+      return DriveDoc.fromJson(doc);
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(403, _forbiddenMessage(response.body));
+    }
+    if (response.statusCode == 422) throw _parseValidationError(response.body);
+    throw ApiException(response.statusCode,
+        _serverErrorMessage(response.body, 'update document'));
+  }
+
+  /// Downloads a document, returning its bytes + a best-effort filename.
+  Future<DownloadedFile> downloadContactDocument(
+      int id, int docId, String fallbackName) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/mobile/contacts/$id/drive/$docId/download'),
+            headers: await _headers())
+        .timeout(_timeout);
+    if (response.statusCode == 200) {
+      var name = fallbackName;
+      final cd = response.headers['content-disposition'];
+      if (cd != null) {
+        final m = RegExp(r'filename\*?=(?:UTF-8'
+                "''"
+                r')?\"?([^\";]+)\"?')
+            .firstMatch(cd);
+        if (m != null) name = Uri.decodeComponent(m.group(1)!.trim());
+      }
+      return DownloadedFile(
+        bytes: response.bodyBytes,
+        fileName: name,
+        mimeType: response.headers['content-type'],
+      );
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(403, _forbiddenMessage(response.body));
+    }
+    throw ApiException(response.statusCode, 'Failed to download document');
+  }
+
+  Future<void> deleteContactDocument(int id, int docId) async {
+    final response = await http
+        .delete(Uri.parse('$baseUrl/mobile/contacts/$id/drive/$docId'),
+            headers: await _headers())
+        .timeout(_timeout);
+    if (response.statusCode == 200 || response.statusCode == 204) return;
+    if (response.statusCode == 403) {
+      throw ApiException(403, _forbiddenMessage(response.body));
+    }
+    throw ApiException(response.statusCode,
+        _serverErrorMessage(response.body, 'delete document'));
+  }
+
+  Future<ContactFicaData> getContactFica(int id) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/mobile/contacts/$id/fica'),
+            headers: await _headers())
+        .timeout(_timeout);
+    if (response.statusCode == 200) {
+      return ContactFicaData.fromJson(
+          Map<String, dynamic>.from(jsonDecode(response.body) as Map));
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(403, _forbiddenMessage(response.body));
+    }
+    throw ApiException(response.statusCode, 'Failed to load FICA');
   }
 
   Future<List<ContactType>> getContactOptions() async {
@@ -1755,6 +2180,20 @@ class ApiService {
   }
 }
 
+/// In-memory result of a streamed document download. Kept in memory because
+/// the app has no `path_provider`; callers hand [bytes] to `share_plus`
+/// (`XFile.fromData`) or `gal` so the user can save/open it.
+class DownloadedFile {
+  final Uint8List bytes;
+  final String fileName;
+  final String? mimeType;
+  const DownloadedFile({
+    required this.bytes,
+    required this.fileName,
+    this.mimeType,
+  });
+}
+
 class ApiException implements Exception {
   final int statusCode;
   final String message;
@@ -1787,6 +2226,16 @@ class ValidationException extends ApiException {
 class AgencyControlledException extends ApiException {
   AgencyControlledException()
       : super(409, 'Your agency manages notification settings centrally.');
+}
+
+/// Thrown by [ApiService.sendToMarket] on a 422 `marketing_blocked`
+/// response. Carries the human-readable [blockedBy] reasons and a freshly
+/// parsed [report] so the caller can re-render the compliance gates.
+class MarketingBlockedException extends ApiException {
+  final List<String> blockedBy;
+  final PropertyCompliance report;
+  MarketingBlockedException(String message, this.blockedBy, this.report)
+      : super(422, message);
 }
 
 /// Server returned 422 with `duplicate_id` from POST /mobile/contacts —

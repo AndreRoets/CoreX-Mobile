@@ -15,6 +15,7 @@ import 'providers/dashboard_provider.dart';
 import 'providers/notifications_provider.dart';
 import 'providers/property_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/visibility_provider.dart';
 import 'screens/auth/client/client_set_password_screen.dart';
 import 'screens/auth/login_choice_screen.dart';
 import 'screens/client/client_home_screen.dart';
@@ -82,6 +83,7 @@ class CoreXApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => NotificationsProvider()),
         ChangeNotifierProvider(create: (_) => PropertyProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => VisibilityProvider()),
       ],
       child: Consumer2<ThemeProvider, BrandingProvider>(
         builder: (context, themeProvider, brandingProvider, _) {
@@ -199,9 +201,16 @@ class _AppBootstrapState extends State<_AppBootstrap> {
         if (!mounted) return;
         final profile = context.read<AuthProvider>().user;
         context.read<BrandingProvider>().loadFromLoggedUser(profile: profile);
+        // Refresh agent visibility on every login / cold start. Failure
+        // falls back silently to own-only with no filter UI.
+        context.read<VisibilityProvider>().refresh();
       });
     } else if (!auth.isLoggedIn && _brandingPulled) {
       _brandingPulled = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        context.read<VisibilityProvider>().reset();
+      });
     }
     return const AuthGate();
   }

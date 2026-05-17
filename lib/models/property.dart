@@ -21,6 +21,16 @@ class Property {
   final String? province;
   final String? region;
   final String? district;
+  // Property24 cascade ids — drive the create/edit location picker. The
+  // human-readable suburb/city/province strings above stay authoritative
+  // for read-only display everywhere else.
+  final int? p24ProvinceId;
+  final int? p24CityId;
+  final int? p24SuburbId;
+  /// True when the stored suburb string can't be matched to a P24 suburb
+  /// (legacy / hand-typed). The form opens the suburb picker empty so the
+  /// agent can pick a real one.
+  final bool p24SuburbMismatch;
   final String? complexName;
   final String? unitNumber;
   final String? sizeM2;
@@ -68,6 +78,10 @@ class Property {
     this.province,
     this.region,
     this.district,
+    this.p24ProvinceId,
+    this.p24CityId,
+    this.p24SuburbId,
+    this.p24SuburbMismatch = false,
     this.complexName,
     this.unitNumber,
     this.sizeM2,
@@ -124,6 +138,10 @@ class Property {
       province: json['province'] as String?,
       region: json['region'] as String?,
       district: json['district'] as String?,
+      p24ProvinceId: toInt(json['p24_province_id']),
+      p24CityId: toInt(json['p24_city_id']),
+      p24SuburbId: toInt(json['p24_suburb_id']),
+      p24SuburbMismatch: json['p24_suburb_mismatch'] == true,
       complexName: json['complex_name'] as String?,
       unitNumber: json['unit_number'] as String?,
       sizeM2: json['size_m2']?.toString(),

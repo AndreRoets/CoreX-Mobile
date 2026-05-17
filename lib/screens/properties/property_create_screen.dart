@@ -6,6 +6,7 @@ import '../../providers/property_provider.dart';
 import '../../services/api_service.dart';
 import '../../theme.dart';
 import 'gallery_upload_sheet.dart';
+import 'p24_location_picker.dart';
 import 'property_option_dropdown.dart';
 import 'spaces_editor_section.dart';
 
@@ -65,9 +66,6 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
   final _streetName = TextEditingController();
   final _complexName = TextEditingController();
   final _unitNumber = TextEditingController();
-  final _suburb = TextEditingController();
-  final _city = TextEditingController();
-  final _province = TextEditingController();
   final _region = TextEditingController();
   final _district = TextEditingController();
 
@@ -86,6 +84,9 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
   final _depositAmount = TextEditingController();
   final _leaseStart = TextEditingController();
   final _leaseEnd = TextEditingController();
+
+  // Property24 cascade selection (province/city/suburb ids).
+  P24Selection _p24 = const P24Selection();
 
   // Server-side per-field errors from the most recent failed save.
   Map<String, String> _fieldErrors = {};
@@ -118,9 +119,6 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
     _streetName.dispose();
     _complexName.dispose();
     _unitNumber.dispose();
-    _suburb.dispose();
-    _city.dispose();
-    _province.dispose();
     _region.dispose();
     _district.dispose();
     _title.dispose();
@@ -155,8 +153,9 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
     if (_status == null || _status!.isEmpty) {
       missing.add(const _MissingField('Status', 'status', null, 1));
     }
-    if (_suburb.text.trim().isEmpty) {
-      missing.add(_MissingField('Suburb', 'suburb', _suburbFieldKey, 0));
+    if (_p24.suburbId == null) {
+      missing.add(
+          _MissingField('Suburb', 'p24_suburb_id', _suburbFieldKey, 0));
     }
     if (_price.text.trim().isEmpty) {
       missing.add(_MissingField('Price', 'price', _priceFieldKey, 1));
@@ -290,7 +289,13 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
   Future<void> _refreshProperty() async {
     if (_propertyId == null) return;
     final provider = context.read<PropertyProvider>();
-    await provider.fetchProperty(_propertyId!);
+    try {
+      await provider.fetchProperty(_propertyId!);
+    } on ApiException {
+      // Just-created property the user owns — a 403 here is unexpected;
+      // leave the form as-is rather than crashing.
+      return;
+    }
     final p = provider.selectedProperty;
     if (p != null && mounted) {
       setState(() {
@@ -337,16 +342,19 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
     put('property_type', _propertyType);
     put('listing_type', _listingType);
     put('status', _status);
-    put('suburb', trimOrNull(_suburb));
     put('price', intOrNull(_price));
+
+    // Property24 cascade ids. Never send the suburb/city/province strings
+    // — the server derives those from these ids and overwrites them.
+    put('p24_province_id', _p24.provinceId);
+    put('p24_city_id', _p24.cityId);
+    put('p24_suburb_id', _p24.suburbId);
 
     // Optional address
     put('street_number', trimOrNull(_streetNumber));
     put('street_name', trimOrNull(_streetName));
     put('complex_name', trimOrNull(_complexName));
     put('unit_number', trimOrNull(_unitNumber));
-    put('city', trimOrNull(_city));
-    put('province', trimOrNull(_province));
     put('region', trimOrNull(_region));
     put('district', trimOrNull(_district));
 
@@ -452,7 +460,7 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
         key = _priceFieldKey;
         step = 1;
         break;
-      case 'suburb':
+      case 'p24_suburb_id':
         key = _suburbFieldKey;
         step = 0;
         break;
@@ -608,14 +616,14 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
           _label('Street Name'), _field(_streetName),
           _label('Complex Name (optional)'), _field(_complexName),
           _label('Unit Number (optional)'), _field(_unitNumber),
-          _label('Suburb *', required: true),
-          _errorField(
+          P24LocationPicker(
             key: _suburbFieldKey,
-            controller: _suburb,
-            errorField: 'suburb',
+            suburbError: _errorFor('p24_suburb_id'),
+            onChanged: (sel) {
+              setState(() => _p24 = sel);
+              _clearFieldError('p24_suburb_id');
+            },
           ),
-          _label('City'), _field(_city),
-          _label('Province (optional)'), _field(_province),
           _label('District (optional)'), _field(_district),
           _label('Region (optional)'), _field(_region),
           const SizedBox(height: 24),

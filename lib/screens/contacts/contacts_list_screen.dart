@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../models/contact.dart';
+import '../../models/visibility.dart';
+import '../../providers/visibility_provider.dart';
 import '../../services/api_service.dart';
 import '../../theme.dart';
+import '../../widgets/agent_filter_bar.dart';
 import 'contact_show_screen.dart';
 import 'new_contact_screen.dart';
 
@@ -42,8 +46,9 @@ class _ContactsListScreenState extends State<ContactsListScreen> {
       _error = null;
     });
     try {
+      final filter = context.read<VisibilityProvider>().contactsFilter;
       final list = await _api.listContacts(
-          search: _search.isEmpty ? null : _search);
+          search: _search.isEmpty ? null : _search, agentFilter: filter);
       if (!mounted) return;
       setState(() {
         _contacts = list;
@@ -56,6 +61,18 @@ class _ContactsListScreenState extends State<ContactsListScreen> {
         _loading = false;
       });
     }
+  }
+
+  /// Pull-to-refresh also re-pulls the visibility descriptor (per spec),
+  /// which resets the filter back to Mine.
+  Future<void> _refresh() async {
+    await context.read<VisibilityProvider>().refresh();
+    await _load();
+  }
+
+  void _onFilterChanged(AgentFilter f) {
+    context.read<VisibilityProvider>().setContactsFilter(f);
+    _load();
   }
 
   void _onSearchChanged(String v) {
@@ -118,9 +135,15 @@ class _ContactsListScreenState extends State<ContactsListScreen> {
               ),
             ),
           ),
+          AgentFilterBar(
+            noun: 'Contacts',
+            module: context.watch<VisibilityProvider>().contacts,
+            selected: context.watch<VisibilityProvider>().contactsFilter,
+            onChanged: _onFilterChanged,
+          ),
           Expanded(
             child: RefreshIndicator(
-              onRefresh: _load,
+              onRefresh: _refresh,
               child: _buildList(),
             ),
           ),

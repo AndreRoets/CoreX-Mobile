@@ -6,6 +6,7 @@ import '../../services/api_service.dart';
 import '../../theme.dart';
 import '../../providers/property_provider.dart';
 import 'gallery_upload_sheet.dart';
+import 'p24_location_picker.dart';
 import 'property_option_dropdown.dart';
 import 'spaces_editor_section.dart';
 
@@ -29,9 +30,6 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
   final _streetName = TextEditingController();
   final _complexName = TextEditingController();
   final _unitNumber = TextEditingController();
-  final _suburb = TextEditingController();
-  final _city = TextEditingController();
-  final _province = TextEditingController();
   final _region = TextEditingController();
   final _district = TextEditingController();
 
@@ -56,6 +54,15 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
   Map<String, dynamic> _initialValues = {};
 
   Map<String, String> _fieldErrors = {};
+
+  // Property24 cascade. Initial ids/mismatch come from the loaded property
+  // and seed the picker; `_p24` tracks the live selection. On PUT we only
+  // send the three ids when the user actually changed the location.
+  int? _p24InitProvinceId;
+  int? _p24InitCityId;
+  int? _p24InitSuburbId;
+  bool _p24SuburbMismatch = false;
+  P24Selection _p24 = const P24Selection();
 
   PropertyOptions? _options;
   String? _optionsError;
@@ -126,7 +133,19 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
 
   Future<void> _loadProperty() async {
     final provider = context.read<PropertyProvider>();
-    await provider.fetchProperty(widget.propertyId);
+    try {
+      await provider.fetchProperty(widget.propertyId);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (e.statusCode == 403) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message)),
+        );
+        Navigator.of(context).pop();
+        return;
+      }
+      return;
+    }
     // Fetch the tag list directly — the detail endpoint may not yet expose
     // `gallery_tags`, so we don't want to rely on it alone.
     await _loadGalleryTags();
@@ -137,10 +156,13 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
         _streetName.text = p.streetName ?? '';
         _complexName.text = p.complexName ?? '';
         _unitNumber.text = p.unitNumber ?? '';
-        _suburb.text = p.suburb ?? '';
-        _city.text = p.city ?? '';
-        _province.text = p.province ?? '';
         _region.text = p.region ?? '';
+        _p24InitProvinceId = p.p24ProvinceId;
+        _p24InitCityId = p.p24CityId;
+        _p24InitSuburbId = p.p24SuburbId;
+        // Legacy / unmatched location → open the suburb picker empty so
+        // the agent picks a real P24 suburb.
+        _p24SuburbMismatch = p.p24SuburbMismatch || p.p24SuburbId == null;
         _district.text = p.district ?? '';
         _title.text = p.title ?? '';
         _propertyType = p.propertyType;
@@ -198,9 +220,6 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
     _streetName.dispose();
     _complexName.dispose();
     _unitNumber.dispose();
-    _suburb.dispose();
-    _city.dispose();
-    _province.dispose();
     _region.dispose();
     _district.dispose();
     _title.dispose();
@@ -281,14 +300,11 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
       'property_type': _propertyType,
       'listing_type': _listingType,
       'status': _status,
-      'suburb': trimOrNull(_suburb),
       'price': intOrNull(_price),
       'street_number': trimOrNull(_streetNumber),
       'street_name': trimOrNull(_streetName),
       'complex_name': trimOrNull(_complexName),
       'unit_number': trimOrNull(_unitNumber),
-      'city': trimOrNull(_city),
-      'province': trimOrNull(_province),
       'region': trimOrNull(_region),
       'district': trimOrNull(_district),
       'category': _category,
@@ -308,6 +324,13 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
     all.forEach((k, v) {
       if (_initialValues[k] != v) diff[k] = v;
     });
+    // Location: only send the three ids when the agent actually changed
+    // the cascade. Omitting them leaves the server-side location as-is.
+    if (_p24.dirty) {
+      diff['p24_province_id'] = _p24.provinceId;
+      diff['p24_city_id'] = _p24.cityId;
+      diff['p24_suburb_id'] = _p24.suburbId;
+    }
     return diff;
   }
 
@@ -471,10 +494,18 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
           _label('Street Name'), _field(_streetName),
           _label('Complex Name (optional)'), _field(_complexName),
           _label('Unit Number (optional)'), _field(_unitNumber),
-          _label('Suburb'),
-          _errorField(controller: _suburb, errorField: 'suburb'),
-          _label('City'), _field(_city),
-          _label('Province (optional)'), _field(_province),
+          P24LocationPicker(
+            key: ValueKey('p24-$_loaded-$_p24InitSuburbId-$_p24InitCityId'),
+            initialProvinceId: _p24InitProvinceId,
+            initialCityId: _p24InitCityId,
+            initialSuburbId: _p24InitSuburbId,
+            suburbMismatch: _p24SuburbMismatch,
+            suburbError: _errorFor('p24_suburb_id'),
+            onChanged: (sel) {
+              setState(() => _p24 = sel);
+              _clearFieldError('p24_suburb_id');
+            },
+          ),
           _label('District (optional)'), _field(_district),
           _label('Region (optional)'), _field(_region),
           const SizedBox(height: 24),
