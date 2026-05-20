@@ -6,6 +6,7 @@ import '../models/branding.dart';
 import '../theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/branding_provider.dart';
+import '../services/api_service.dart';
 import '../services/security_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -22,6 +23,12 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _biometricSupported = false;
   bool _autoTried = false;
 
+  // Demo Mode (controlled entirely by backend's /v1/demo/status response).
+  // null = still checking, false = use normal form, true = show role buttons.
+  bool? _demoEnabled;
+  List<String> _demoRoles = const [];
+  String? _demoBusyRole;
+
   @override
   void initState() {
     super.initState();
@@ -33,6 +40,7 @@ class _LoginScreenState extends State<LoginScreen> {
     // Pre-login: refresh agency branding so the login screen is themed
     // before the user signs in. Failure falls back silently.
     unawaited(context.read<BrandingProvider>().loadBySlug(Env.agencySlug));
+    unawaited(_checkDemoStatus());
     final saved = await auth.readSavedCredentials();
     final supported = await SecurityService.instance.canUseBiometrics();
     if (!mounted) return;
@@ -54,6 +62,100 @@ class _LoginScreenState extends State<LoginScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkDemoStatus() async {
+    try {
+      final status = await ApiService().getDemoStatus();
+      if (!mounted) return;
+      setState(() {
+        _demoEnabled = status.enabled;
+        _demoRoles = status.roles;
+      });
+    } catch (_) {
+      // Network error / non-200 → demo is opt-in, fall back to the normal form.
+      if (!mounted) return;
+      setState(() => _demoEnabled = false);
+    }
+  }
+
+  Future<void> _handleDemoLogin(String role) async {
+    setState(() => _demoBusyRole = role);
+    final auth = context.read<AuthProvider>();
+    final ok = await auth.loginAsDemo(role);
+    if (!mounted) return;
+    setState(() => _demoBusyRole = null);
+    if (ok) {
+      unawaited(
+        context.read<BrandingProvider>().loadFromLoggedUser(profile: auth.user),
+      );
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).popUntil((r) => r.isFirst);
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(auth.error ?? 'Could not start demo session')),
+      );
+    }
+  }
+
+  static const _demoRoleLabels = {
+    'admin': 'Admin',
+    'branch_manager': 'Branch Manager',
+    'agent': 'Agent',
+    'viewer': 'Viewer',
+  };
+
+  List<Widget> _buildDemoButtons() {
+    final auth = context.watch<AuthProvider>();
+    final roles = _demoRoles.isNotEmpty
+        ? _demoRoles
+        : _demoRoleLabels.keys.toList();
+    final widgets = <Widget>[
+      Text(
+        'Demo Mode',
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.5,
+          color: AppTheme.textSecondary(context),
+        ),
+      ),
+      const SizedBox(height: 16),
+    ];
+    for (var i = 0; i < roles.length; i++) {
+      final role = roles[i];
+      final label = _demoRoleLabels[role] ?? role;
+      final busy = _demoBusyRole == role;
+      final disabled = _demoBusyRole != null;
+      widgets.add(
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: disabled ? null : () => _handleDemoLogin(role),
+            child: busy
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(label),
+          ),
+        ),
+      );
+      if (i != roles.length - 1) widgets.add(const SizedBox(height: 12));
+    }
+    if (auth.error != null) {
+      widgets.add(const SizedBox(height: 16));
+      widgets.add(Text(
+        auth.error!,
+        style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+      ));
+    }
+    return widgets;
   }
 
   Future<void> _handleLogin() async {
@@ -139,6 +241,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final branding = context.watch<BrandingProvider>().branding;
     final brand = BrandColors.of(context);
     final showBiometric = _biometricSupported && auth.biometricEnabled;
+    final showDemo = _demoEnabled == true;
 
     return Scaffold(
       body: SafeArea(
@@ -170,54 +273,57 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 48),
-                  TextFormField(
-                    controller: _emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    autofillHints: const [AutofillHints.username, AutofillHints.email],
-                    style: TextStyle(color: AppTheme.textPrimary(context)),
-                    decoration: const InputDecoration(hintText: 'Email'),
-                    validator: (v) =>
-                        v == null || v.isEmpty ? 'Enter your email' : null,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _passwordController,
-                    obscureText: true,
-                    autofillHints: const [AutofillHints.password],
-                    style: TextStyle(color: AppTheme.textPrimary(context)),
-                    decoration: const InputDecoration(hintText: 'Password'),
-                    validator: (v) =>
-                        v == null || v.isEmpty ? 'Enter your password' : null,
-                  ),
-                  if (auth.error != null) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      auth.error!,
-                      style: const TextStyle(
-                          color: Colors.redAccent, fontSize: 13),
+                  if (showDemo) ..._buildDemoButtons()
+                  else ...[
+                    TextFormField(
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      autofillHints: const [AutofillHints.username, AutofillHints.email],
+                      style: TextStyle(color: AppTheme.textPrimary(context)),
+                      decoration: const InputDecoration(hintText: 'Email'),
+                      validator: (v) =>
+                          v == null || v.isEmpty ? 'Enter your email' : null,
                     ),
-                  ],
-                  const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: auth.isLoading ? null : _handleLogin,
-                    child: auth.isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text('Login'),
-                  ),
-                  if (showBiometric) ...[
                     const SizedBox(height: 16),
-                    OutlinedButton.icon(
-                      onPressed: auth.isLoading ? null : _handleBiometric,
-                      icon: const Icon(Icons.fingerprint_rounded),
-                      label: const Text('Use biometrics'),
+                    TextFormField(
+                      controller: _passwordController,
+                      obscureText: true,
+                      autofillHints: const [AutofillHints.password],
+                      style: TextStyle(color: AppTheme.textPrimary(context)),
+                      decoration: const InputDecoration(hintText: 'Password'),
+                      validator: (v) =>
+                          v == null || v.isEmpty ? 'Enter your password' : null,
                     ),
+                    if (auth.error != null) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        auth.error!,
+                        style: const TextStyle(
+                            color: Colors.redAccent, fontSize: 13),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    ElevatedButton(
+                      onPressed: auth.isLoading ? null : _handleLogin,
+                      child: auth.isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Login'),
+                    ),
+                    if (showBiometric) ...[
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        onPressed: auth.isLoading ? null : _handleBiometric,
+                        icon: const Icon(Icons.fingerprint_rounded),
+                        label: const Text('Use biometrics'),
+                      ),
+                    ],
                   ],
                 ],
               ),

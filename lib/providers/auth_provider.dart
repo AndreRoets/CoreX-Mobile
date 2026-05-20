@@ -90,6 +90,31 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Demo Mode sign-in. Backend picks a random user for the given role and
+  /// returns a normal Sanctum token, so the rest of the app sees an ordinary
+  /// authenticated session. Does NOT save credentials or prompt for biometrics.
+  Future<bool> loginAsDemo(String role) async {
+    _error = null;
+    try {
+      final result = await _api.demoLogin(role);
+      await _api.saveToken(result['token']);
+      _user = result['user'];
+      _isLoggedIn = true;
+      _isLocked = false;
+      notifyListeners();
+      unawaited(_messaging.onLogin());
+      return true;
+    } on ApiException catch (e) {
+      _error = e.message;
+      notifyListeners();
+      return false;
+    } catch (_) {
+      _error = 'Could not start demo session';
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// Returns saved (email, password) so the LoginScreen can prefill the
   /// fields. Empty strings if nothing was saved.
   Future<({String email, String password})> readSavedCredentials() async {

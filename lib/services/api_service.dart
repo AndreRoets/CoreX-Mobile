@@ -85,6 +85,45 @@ class ApiService {
     throw ApiException(response.statusCode, 'Login failed');
   }
 
+  // --- Demo Mode ---
+
+  /// `GET /v1/demo/status` — unauthenticated. Returns `{enabled, roles}`.
+  /// Throws on non-200 / network error; caller falls back to the normal form.
+  Future<({bool enabled, List<String> roles})> getDemoStatus() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/v1/demo/status'),
+      headers: const {'Accept': 'application/json'},
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      return (
+        enabled: body['enabled'] == true,
+        roles: (body['roles'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+      );
+    }
+    throw ApiException(response.statusCode, 'Demo status failed');
+  }
+
+  /// `POST /v1/demo/login` — unauthenticated. Same response shape as /login.
+  Future<Map<String, dynamic>> demoLogin(String role) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/v1/demo/login'),
+      headers: const {'Accept': 'application/json', 'Content-Type': 'application/json'},
+      body: jsonEncode({'role': role}),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    }
+    String message = 'Demo login failed';
+    try {
+      final body = jsonDecode(response.body);
+      if (body is Map && body['message'] is String) message = body['message'];
+    } catch (_) {}
+    throw ApiException(response.statusCode, message);
+  }
+
   // --- Agent visibility ---
 
   /// `GET /mobile/visibility` — per-module data-visibility descriptor.
