@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../models/branding.dart';
 import '../../theme.dart';
 import '../../models/property.dart';
 import '../../models/visibility.dart';
 import '../../providers/property_provider.dart';
 import '../../providers/visibility_provider.dart';
 import '../../widgets/agent_filter_bar.dart';
+import '../../widgets/ui/list_row.dart';
+import '../../widgets/ui/status_chip.dart';
 import 'property_create_screen.dart';
 import 'property_edit_screen.dart';
 import 'property_overview_screen.dart';
@@ -347,16 +350,12 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: AppTheme.brand,
-        onPressed: () async {
-          await Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const PropertyCreateScreen()),
-          );
-          if (mounted) context.read<PropertyProvider>().fetchProperties();
-        },
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
+      floatingActionButton: _PropertiesFab(onPressed: () async {
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const PropertyCreateScreen()),
+        );
+        if (mounted) context.read<PropertyProvider>().fetchProperties();
+      }),
       body: Column(
         children: [
           Padding(
@@ -443,53 +442,48 @@ class _PropertyListScreenState extends State<PropertyListScreen> {
   }
 
   Widget _buildEmpty() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.home_outlined, size: 64, color: AppTheme.textMuted(context)),
-          const SizedBox(height: 16),
-          Text('No properties yet',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600,
-                  color: AppTheme.textPrimary(context))),
-          const SizedBox(height: 8),
-          Text('Tap + to add your first property',
-              style: TextStyle(color: AppTheme.textSecondary(context))),
-        ],
-      ),
+    return const EmptyState(
+      icon: Icons.home_outlined,
+      title: 'No properties yet',
+      subtitle: 'Tap + to add your first property',
     );
   }
 
   Widget _buildNoMatches() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.search_off,
-              size: 48, color: AppTheme.textMuted(context)),
-          const SizedBox(height: 12),
-          Text(
-            'No properties match',
-            style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textPrimary(context)),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Try a different search or clear the filters',
-            style: TextStyle(
-                fontSize: 12, color: AppTheme.textSecondary(context)),
-          ),
-          const SizedBox(height: 12),
-          TextButton(
-            onPressed: () {
-              _searchController.clear();
-              setState(() => _search = '');
-              _clearFilters();
-            },
-            child: const Text('Clear all'),
-          ),
-        ],
+    return EmptyState(
+      icon: Icons.search_off_rounded,
+      title: 'No matches',
+      subtitle: 'Try a different search or clear the filters.',
+      action: TextButton(
+        onPressed: () {
+          _searchController.clear();
+          setState(() => _search = '');
+          _clearFilters();
+        },
+        child: const Text('Clear all'),
+      ),
+    );
+  }
+}
+
+class _PropertiesFab extends StatelessWidget {
+  final VoidCallback onPressed;
+  const _PropertiesFab({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = BrandColors.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        boxShadow: AppTheme.brandGlow(brand.button, intensity: 0.35),
+      ),
+      child: FloatingActionButton(
+        backgroundColor: brand.button,
+        foregroundColor: Branding.onColor(brand.button),
+        onPressed: onPressed,
+        elevation: 0,
+        child: const Icon(Icons.add_rounded),
       ),
     );
   }
@@ -502,108 +496,102 @@ class _PropertyCard extends StatelessWidget {
   Color _statusColor(String? status) {
     switch (status?.toLowerCase()) {
       case 'active':
-        return Colors.green;
+        return const Color(0xFF22C55E);
       case 'draft':
-        return Colors.amber;
+        return const Color(0xFFF59E0B);
       default:
-        return Colors.grey;
+        return const Color(0xFF8890A4);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-        onTap: () async {
-          // Listed properties open the read-first Overview; drafts (or
-          // anything without a status set yet) jump straight to Edit so the
-          // agent can finish capturing.
-          final isDraft = (property.status ?? '').toLowerCase() == 'draft' ||
-              (property.status ?? '').isEmpty;
-          await Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => isDraft
-                  ? PropertyEditScreen(propertyId: property.id)
-                  : PropertyOverviewScreen(propertyId: property.id),
-            ),
-          );
-          if (context.mounted) context.read<PropertyProvider>().fetchProperties();
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              // Thumbnail
-              ClipRRect(
-                borderRadius: BorderRadius.circular(AppTheme.radius),
-                child: property.thumbnail != null
-                    ? Image.network(property.thumbnail!, width: 72, height: 72,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _placeholder(context))
-                    : _placeholder(context),
-              ),
-              const SizedBox(width: 12),
-              // Info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(property.address,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textPrimary(context),
-                        )),
-                    const SizedBox(height: 8),
-                    Row(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: AppTheme.cardGradient(context),
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          boxShadow: AppTheme.softShadow(context),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppTheme.radius),
+            onTap: () async {
+              final isDraft =
+                  (property.status ?? '').toLowerCase() == 'draft' ||
+                      (property.status ?? '').isEmpty;
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => isDraft
+                      ? PropertyEditScreen(propertyId: property.id)
+                      : PropertyOverviewScreen(propertyId: property.id),
+                ),
+              );
+              if (context.mounted) {
+                context.read<PropertyProvider>().fetchProperties();
+              }
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: property.thumbnail != null
+                        ? Image.network(
+                            property.thumbnail!,
+                            width: 76,
+                            height: 76,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => _placeholder(context),
+                          )
+                        : _placeholder(context),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (property.beds != null) ...[
-                          Icon(Icons.bed, size: 16, color: AppTheme.textSecondary(context)),
-                          const SizedBox(width: 4),
-                          Text('${property.beds}', style: TextStyle(color: AppTheme.textSecondary(context), fontSize: 13)),
-                          const SizedBox(width: 12),
-                        ],
-                        if (property.baths != null) ...[
-                          Icon(Icons.bathtub, size: 16, color: AppTheme.textSecondary(context)),
-                          const SizedBox(width: 4),
-                          Text('${property.baths}', style: TextStyle(color: AppTheme.textSecondary(context), fontSize: 13)),
-                          const SizedBox(width: 12),
-                        ],
-                        if (property.garages != null) ...[
-                          Icon(Icons.garage, size: 16, color: AppTheme.textSecondary(context)),
-                          const SizedBox(width: 4),
-                          Text('${property.garages}', style: TextStyle(color: AppTheme.textSecondary(context), fontSize: 13)),
-                        ],
+                        Text(
+                          property.address,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.2,
+                            color: AppTheme.textPrimary(context),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            if (property.beds != null) ...[
+                              _Stat(icon: Icons.bed_rounded, value: '${property.beds}'),
+                              const SizedBox(width: 12),
+                            ],
+                            if (property.baths != null) ...[
+                              _Stat(icon: Icons.bathtub_rounded, value: '${property.baths}'),
+                              const SizedBox(width: 12),
+                            ],
+                            if (property.garages != null)
+                              _Stat(icon: Icons.garage_rounded, value: '${property.garages}'),
+                          ],
+                        ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-              // Status chip + edit
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: _statusColor(property.status).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(AppTheme.radius),
-                    ),
-                    child: Text(
-                      property.status ?? 'N/A',
-                      style: TextStyle(
-                        color: _statusColor(property.status),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
                   ),
-                  const SizedBox(height: 8),
-                  Icon(Icons.edit, size: 18, color: AppTheme.textMuted(context)),
+                  const SizedBox(width: 8),
+                  StatusChip(
+                    label: property.status ?? 'N/A',
+                    color: _statusColor(property.status),
+                    dense: true,
+                  ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -612,12 +600,35 @@ class _PropertyCard extends StatelessWidget {
 
   Widget _placeholder(BuildContext context) {
     return Container(
-      width: 72, height: 72,
+      width: 76,
+      height: 76,
       decoration: BoxDecoration(
         color: AppTheme.surface2(context),
-        borderRadius: BorderRadius.circular(AppTheme.radius),
+        borderRadius: BorderRadius.circular(14),
       ),
-      child: Icon(Icons.home, color: AppTheme.textMuted(context)),
+      child: Icon(Icons.home_rounded,
+          color: AppTheme.textMuted(context), size: 28),
+    );
+  }
+}
+
+class _Stat extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  const _Stat({required this.icon, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 15, color: AppTheme.textSecondary(context)),
+        const SizedBox(width: 4),
+        Text(value,
+            style: TextStyle(
+                color: AppTheme.textSecondary(context),
+                fontSize: 13,
+                fontWeight: FontWeight.w600)),
+      ],
     );
   }
 }

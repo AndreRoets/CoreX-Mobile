@@ -9,77 +9,152 @@ class AppTheme {
   /// [BrandColors.of(context)] still re-theme automatically.
   static Branding _activeBranding = Branding.fallback;
 
-  /// Called by BrandingProvider whenever a new agency branding is applied.
   static void updateActiveBranding(Branding b) {
     _activeBranding = b;
   }
 
-  /// Reactive — returns the current agency button colour. Note this is no
-  /// longer a `const` so call sites that previously did
-  /// `const TextStyle(color: AppTheme.brand)` must drop the `const`.
   static Color get brand => _activeBranding.button;
   static Color get brandDark => _activeBranding.defaultColor;
 
-  /// Card/button corner radius. Bumped from 6 → 14 to feel less spreadsheet-y.
-  static const double radius = 14.0;
-  static const double radiusSmall = 8.0;
-  static const double radiusLarge = 20.0;
+  // --- Radius scale -------------------------------------------------------
+  // Tile/card default bumped to 18 (cleaner, more modern). HeroCard uses 24.
+  static const double radius = 18.0;
+  static const double radiusSmall = 10.0;
+  static const double radiusLarge = 24.0;
+  static const double radiusButton = 16.0;
+  static const double radiusChip = 12.0;
 
-  // --------------- Dark palette ---------------
-  static const Color darkBackground = Color(0xFF0D0F14);
-  static const Color darkSurface = Color(0xFF13161D);
-  static const Color darkSurface2 = Color(0xFF1A1E28);
-  static const Color darkBorder = Color(0x14FFFFFF);
-  static const Color darkTextPrimary = Color(0xFFEEF0F5);
-  static const Color darkTextSecondary = Color(0xFF8890A4);
-  static const Color darkTextMuted = Color(0xFF545B6E);
+  // --- Dark palette (richer, deeper, faint blue undertone) ---------------
+  static const Color darkBackground = Color(0xFF07090F);
+  static const Color darkSurface    = Color(0xFF0F1420);
+  static const Color darkSurface2   = Color(0xFF182032);
+  // Near-invisible border in dark mode — depth comes from shadow + gradient.
+  static const Color darkBorder        = Color(0x0AFFFFFF);
+  static const Color darkTextPrimary   = Color(0xFFEEF1F7);
+  static const Color darkTextSecondary = Color(0xFF8C95AD);
+  static const Color darkTextMuted     = Color(0xFF565E73);
 
-  // --------------- Light palette (warmer off-white) ---------------
+  // --- Light palette ------------------------------------------------------
   static const Color lightBackground = Color(0xFFFAFAF7);
-  static const Color lightSurface = Color(0xFFFFFFFF);
-  static const Color lightSurface2 = Color(0xFFF2F4F9);
-  static const Color lightBorder = Color(0x14000000);
-  static const Color lightTextPrimary = Color(0xFF0F172A);
+  static const Color lightSurface    = Color(0xFFFFFFFF);
+  static const Color lightSurface2   = Color(0xFFF2F4F9);
+  static const Color lightBorder        = Color(0x14000000);
+  static const Color lightTextPrimary   = Color(0xFF0F172A);
   static const Color lightTextSecondary = Color(0xFF64748B);
-  static const Color lightTextMuted = Color(0xFF9CA3AF);
+  static const Color lightTextMuted     = Color(0xFF9CA3AF);
 
-  // --- Convenience accessors (theme-aware) ---
+  // --- Theme-aware accessors ---------------------------------------------
+  static bool isDark(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark;
+
   static Color background(BuildContext context) =>
-      Theme.of(context).brightness == Brightness.dark ? darkBackground : lightBackground;
+      isDark(context) ? darkBackground : lightBackground;
   static Color surface(BuildContext context) =>
-      Theme.of(context).brightness == Brightness.dark ? darkSurface : lightSurface;
+      isDark(context) ? darkSurface : lightSurface;
   static Color surface2(BuildContext context) =>
-      Theme.of(context).brightness == Brightness.dark ? darkSurface2 : lightSurface2;
+      isDark(context) ? darkSurface2 : lightSurface2;
   static Color borderColor(BuildContext context) =>
-      Theme.of(context).brightness == Brightness.dark ? darkBorder : lightBorder;
+      isDark(context) ? darkBorder : lightBorder;
   static Color textPrimary(BuildContext context) =>
-      Theme.of(context).brightness == Brightness.dark ? darkTextPrimary : lightTextPrimary;
+      isDark(context) ? darkTextPrimary : lightTextPrimary;
   static Color textSecondary(BuildContext context) =>
-      Theme.of(context).brightness == Brightness.dark ? darkTextSecondary : lightTextSecondary;
+      isDark(context) ? darkTextSecondary : lightTextSecondary;
   static Color textMuted(BuildContext context) =>
-      Theme.of(context).brightness == Brightness.dark ? darkTextMuted : lightTextMuted;
+      isDark(context) ? darkTextMuted : lightTextMuted;
 
-  /// Soft elevation shadow — one subtle layer, not Material 2 drop-shadow.
+  /// Standard soft drop-shadow for cards and surfaces.
   static List<BoxShadow> softShadow(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
+    final dark = isDark(context);
     return [
       BoxShadow(
-        color: dark ? Colors.black.withValues(alpha: 0.35) : Colors.black.withValues(alpha: 0.04),
-        blurRadius: 20,
-        offset: const Offset(0, 4),
+        color: dark
+            ? Colors.black.withValues(alpha: 0.45)
+            : Colors.black.withValues(alpha: 0.05),
+        blurRadius: 24,
+        spreadRadius: -4,
+        offset: const Offset(0, 8),
       ),
     ];
   }
 
-  // --------------- ThemeData builders ---------------
+  /// Colored halo — used on hero CTAs, logos, active tabs. Pass a brand
+  /// colour. Intensity tunes alpha for restraint vs. drama.
+  static List<BoxShadow> brandGlow(
+    Color color, {
+    double intensity = 0.45,
+    double blur = 32,
+    double spread = -4,
+    Offset offset = const Offset(0, 8),
+  }) =>
+      [
+        BoxShadow(
+          color: color.withValues(alpha: intensity),
+          blurRadius: blur,
+          spreadRadius: spread,
+          offset: offset,
+        ),
+        BoxShadow(
+          color: color.withValues(alpha: intensity * 0.45),
+          blurRadius: blur * 2,
+          spreadRadius: spread - 4,
+          offset: Offset(offset.dx, offset.dy * 1.5),
+        ),
+      ];
+
+  /// Subtle top-to-bottom gradient used on standard cards/tiles. In dark
+  /// mode it adds a faint highlight at the top edge — fakes a light source.
+  static Gradient cardGradient(BuildContext context) {
+    final dark = isDark(context);
+    if (dark) {
+      return const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [Color(0xFF141A28), Color(0xFF0F1420)],
+      );
+    }
+    return const LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [Color(0xFFFFFFFF), Color(0xFFF7F8FB)],
+    );
+  }
+
+  /// Brand-tinted gradient for hero surfaces (greeting card, etc).
+  /// Source colour is read from active branding so each tenant gets its own
+  /// halo without any hardcoded blue.
+  static Gradient heroGradient(BuildContext context, Color brand) {
+    final dark = isDark(context);
+    if (dark) {
+      return LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color.lerp(darkSurface, brand, 0.18)!,
+          Color.lerp(darkSurface, brand, 0.04)!,
+        ],
+      );
+    }
+    return LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        brand.withValues(alpha: 0.10),
+        brand.withValues(alpha: 0.03),
+      ],
+    );
+  }
+
+  // --------------- ThemeData builders -----------------------------------
 
   static ThemeData dark(Branding branding) => _buildTheme(
         brightness: Brightness.dark,
         branding: branding,
         background: darkBackground,
         surface: darkSurface,
+        surface2: darkSurface2,
         border: darkBorder,
         textPrimary: darkTextPrimary,
+        textSecondary: darkTextSecondary,
       );
 
   static ThemeData light(Branding branding) => _buildTheme(
@@ -87,11 +162,12 @@ class AppTheme {
         branding: branding,
         background: lightBackground,
         surface: lightSurface,
+        surface2: lightSurface2,
         border: lightBorder,
         textPrimary: lightTextPrimary,
+        textSecondary: lightTextSecondary,
       );
 
-  // Backwards-compatible getters for code that hasn't been migrated yet.
   static ThemeData get darkTheme => dark(Branding.fallback);
   static ThemeData get lightTheme => light(Branding.fallback);
 
@@ -100,26 +176,37 @@ class AppTheme {
     required Branding branding,
     required Color background,
     required Color surface,
+    required Color surface2,
     required Color border,
     required Color textPrimary,
+    required Color textSecondary,
   }) {
     final base = brightness == Brightness.dark
         ? ThemeData.dark()
         : ThemeData.light();
 
-    // Inter for body, Plus Jakarta Sans for display/headlines — pairs warm
-    // and modern without breaking the data-dense feel of the existing UI.
     final body = GoogleFonts.interTextTheme(base.textTheme);
     final display = GoogleFonts.plusJakartaSansTextTheme(base.textTheme);
 
     final mergedText = body.copyWith(
-      displayLarge: display.displayLarge?.copyWith(fontWeight: FontWeight.w700, color: textPrimary),
-      displayMedium: display.displayMedium?.copyWith(fontWeight: FontWeight.w700, color: textPrimary),
-      displaySmall: display.displaySmall?.copyWith(fontWeight: FontWeight.w700, color: textPrimary),
-      headlineLarge: display.headlineLarge?.copyWith(fontWeight: FontWeight.w700, color: textPrimary),
-      headlineMedium: display.headlineMedium?.copyWith(fontWeight: FontWeight.w700, color: textPrimary),
-      headlineSmall: display.headlineSmall?.copyWith(fontWeight: FontWeight.w600, color: textPrimary),
-      titleLarge: display.titleLarge?.copyWith(fontWeight: FontWeight.w600, color: textPrimary),
+      displayLarge: display.displayLarge?.copyWith(
+          fontWeight: FontWeight.w800, color: textPrimary, letterSpacing: -1.0),
+      displayMedium: display.displayMedium?.copyWith(
+          fontWeight: FontWeight.w800, color: textPrimary, letterSpacing: -0.8),
+      displaySmall: display.displaySmall?.copyWith(
+          fontWeight: FontWeight.w700, color: textPrimary, letterSpacing: -0.6),
+      headlineLarge: display.headlineLarge?.copyWith(
+          fontWeight: FontWeight.w700, color: textPrimary, letterSpacing: -0.5),
+      headlineMedium: display.headlineMedium?.copyWith(
+          fontWeight: FontWeight.w700, color: textPrimary, letterSpacing: -0.4),
+      headlineSmall: display.headlineSmall?.copyWith(
+          fontWeight: FontWeight.w700, color: textPrimary, letterSpacing: -0.3),
+      titleLarge: display.titleLarge?.copyWith(
+          fontWeight: FontWeight.w700, color: textPrimary, letterSpacing: -0.2),
+      titleMedium: body.titleMedium?.copyWith(
+          fontWeight: FontWeight.w600, color: textPrimary),
+      bodyLarge: body.bodyLarge?.copyWith(color: textPrimary, height: 1.4),
+      bodyMedium: body.bodyMedium?.copyWith(color: textPrimary, height: 1.4),
     );
 
     return ThemeData(
@@ -146,45 +233,72 @@ class AppTheme {
         elevation: 0,
       ),
       appBarTheme: AppBarTheme(
-        backgroundColor: surface,
+        backgroundColor: background,
         elevation: 0,
+        scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,
         iconTheme: IconThemeData(color: textPrimary),
         titleTextStyle: GoogleFonts.plusJakartaSans(
           color: textPrimary,
-          fontSize: 19,
+          fontSize: 20,
           fontWeight: FontWeight.w700,
-          letterSpacing: -0.2,
+          letterSpacing: -0.3,
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: branding.button,
           foregroundColor: branding.onButton,
-          textStyle: const TextStyle(fontWeight: FontWeight.w600),
+          textStyle: const TextStyle(
+              fontWeight: FontWeight.w700, fontSize: 15, letterSpacing: 0.1),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(radius),
+            borderRadius: BorderRadius.circular(radiusButton),
           ),
-          minimumSize: const Size(double.infinity, 50),
+          minimumSize: const Size(double.infinity, 56),
           elevation: 0,
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: textPrimary,
+          backgroundColor: surface2,
+          side: BorderSide.none,
+          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(radiusButton),
+          ),
+          minimumSize: const Size(double.infinity, 56),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: branding.button,
+          textStyle: const TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: brightness == Brightness.dark ? darkSurface2 : lightSurface2,
+        fillColor: surface2,
+        hintStyle: TextStyle(color: textSecondary.withValues(alpha: 0.7)),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(radius),
+          borderRadius: BorderRadius.circular(radiusButton),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(radius),
+          borderRadius: BorderRadius.circular(radiusButton),
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(radius),
+          borderRadius: BorderRadius.circular(radiusButton),
           borderSide: BorderSide(color: branding.icon, width: 1.5),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+      ),
+      dividerTheme: DividerThemeData(
+        color: border,
+        thickness: 1,
+        space: 1,
       ),
       scrollbarTheme: ScrollbarThemeData(
         thickness: WidgetStateProperty.all(6),

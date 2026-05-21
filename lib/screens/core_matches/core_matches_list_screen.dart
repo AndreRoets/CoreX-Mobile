@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../models/core_match.dart';
 import '../../services/api_service.dart';
 import '../../theme.dart';
+import '../../widgets/ui/glow_button.dart';
+import '../../widgets/ui/list_row.dart';
 import '../contacts/contact_show_screen.dart';
 import 'core_match_detail_screen.dart';
 import 'core_matches_common.dart';
@@ -63,7 +65,7 @@ class _CoreMatchesListScreenState extends State<CoreMatchesListScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Core Matches')),
       body: RefreshIndicator(
-        color: AppTheme.brand,
+        color: Theme.of(context).colorScheme.primary,
         backgroundColor: AppTheme.surface(context),
         onRefresh: _load,
         child: _buildBody(),
@@ -79,19 +81,16 @@ class _CoreMatchesListScreenState extends State<CoreMatchesListScreen> {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              children: [
-                Icon(Icons.error_outline_rounded,
-                    size: 32, color: AppTheme.textSecondary(context)),
-                const SizedBox(height: 8),
-                Text(_error!,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppTheme.textSecondary(context))),
-                const SizedBox(height: 12),
-                ElevatedButton(onPressed: _load, child: const Text('Retry')),
-              ],
+          EmptyState(
+            icon: Icons.error_outline_rounded,
+            title: 'Could not load matches',
+            subtitle: _error,
+            action: SizedBox(
+              width: 180,
+              child: GlowButton(
+                onPressed: _load,
+                child: const Text('Retry'),
+              ),
             ),
           ),
         ],
@@ -100,42 +99,12 @@ class _CoreMatchesListScreenState extends State<CoreMatchesListScreen> {
     if (_groups.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 40, 20, 40),
-        children: [
-          Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: AppTheme.brand.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.favorite_rounded,
-                      color: AppTheme.brand, size: 26),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'No core matches yet',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary(context),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Create one from a contact to start tracking buyer criteria.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppTheme.textSecondary(context),
-                  ),
-                ),
-              ],
-            ),
+        children: const [
+          EmptyState(
+            icon: Icons.favorite_rounded,
+            title: 'No core matches yet',
+            subtitle:
+                'Create one from a contact to start tracking buyer criteria.',
           ),
         ],
       );
@@ -143,7 +112,7 @@ class _CoreMatchesListScreenState extends State<CoreMatchesListScreen> {
 
     return ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       itemCount: _groups.length,
       itemBuilder: (_, i) => _groupSection(_groups[i]),
     );
@@ -153,111 +122,50 @@ class _CoreMatchesListScreenState extends State<CoreMatchesListScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        InkWell(
-          borderRadius: BorderRadius.circular(AppTheme.radius),
-          onTap: () => _openContact(g.contact.id),
-          child: Container(
-            margin: const EdgeInsets.only(top: 12, bottom: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: AppTheme.surface2(context),
-              borderRadius: BorderRadius.circular(AppTheme.radius),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.person_rounded,
-                    size: 16, color: AppTheme.textSecondary(context)),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    g.contact.fullName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.textPrimary(context),
-                    ),
-                  ),
-                ),
-                if (g.contact.phone != null && g.contact.phone!.isNotEmpty)
-                  Flexible(
-                    child: Text(
-                      g.contact.phone!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppTheme.textSecondary(context),
-                      ),
-                    ),
-                  ),
-                const SizedBox(width: 4),
-                Icon(Icons.chevron_right_rounded,
-                    size: 16, color: AppTheme.textMuted(context)),
-              ],
-            ),
+        Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 8),
+          child: ListRow(
+            icon: Icons.person_rounded,
+            title: g.contact.fullName,
+            subtitle: g.contact.phone?.isNotEmpty == true
+                ? g.contact.phone
+                : null,
+            showChevron: true,
+            onTap: () => _openContact(g.contact.id),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           ),
         ),
-        ...g.matches.map(_matchTile),
+        for (final m in g.matches)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _matchTile(m),
+          ),
       ],
     );
   }
 
   Widget _matchTile(CoreMatchSummary m) {
     final fs = m.feedbackSummary;
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppTheme.radius),
+    return ListRow(
+      icon: Icons.favorite_rounded,
+      title: m.displayName,
       onTap: () => _openMatch(m.id),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 6),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppTheme.surface(context),
-          borderRadius: BorderRadius.circular(AppTheme.radius),
-          border: Border.all(color: AppTheme.borderColor(context)),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          m.displayName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.textPrimary(context),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      statusPill(m.status),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      _counter(kReactionInterested, fs.interested),
-                      const SizedBox(width: 12),
-                      _counter(kReactionNotInterested, fs.notInterested),
-                      const SizedBox(width: 12),
-                      _counter(kReactionSaved, fs.saved),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right_rounded,
-                color: AppTheme.textMuted(context)),
-          ],
-        ),
+      showChevron: true,
+      trailing: statusPill(m.status),
+      subtitle: null,
+      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+      leading: null,
+    ).withFooter(
+      context,
+      Row(
+        children: [
+          _counter(kReactionInterested, fs.interested),
+          const SizedBox(width: 14),
+          _counter(kReactionNotInterested, fs.notInterested),
+          const SizedBox(width: 14),
+          _counter(kReactionSaved, fs.saved),
+        ],
       ),
     );
   }
@@ -268,18 +176,84 @@ class _CoreMatchesListScreenState extends State<CoreMatchesListScreen> {
         Container(
           width: 8,
           height: 8,
-          decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+          decoration: BoxDecoration(
+            color: c,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                  color: c.withValues(alpha: 0.6),
+                  blurRadius: 6,
+                  spreadRadius: -1),
+            ],
+          ),
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: 5),
         Text(
           '$n',
           style: TextStyle(
             fontSize: 12,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
             color: AppTheme.textSecondary(context),
           ),
         ),
       ],
+    );
+  }
+}
+
+// Helper extension: wrap a ListRow with a small footer (reaction counters).
+// We keep ListRow itself generic and stitch the counters underneath without
+// breaking the shared widget.
+extension on ListRow {
+  Widget withFooter(BuildContext context, Widget footer) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: AppTheme.cardGradient(context),
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        boxShadow: AppTheme.softShadow(context),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(AppTheme.radius),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(AppTheme.radius),
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 12, 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.2,
+                          color: AppTheme.textPrimary(context),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    trailing!,
+                    const SizedBox(width: 4),
+                    Icon(Icons.chevron_right_rounded,
+                        size: 20, color: AppTheme.textMuted(context)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+            child: footer,
+          ),
+        ],
+      ),
     );
   }
 }

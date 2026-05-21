@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/ui/status_chip.dart';
 
 const Color kReactionInterested = Color(0xFF22C55E);
 const Color kReactionNotInterested = Color(0xFFEF4444);
@@ -27,23 +28,10 @@ Color statusColor(String? s) {
 Widget statusPill(String? status) {
   final c = statusColor(status);
   final label = (status == null || status.isEmpty) ? 'active' : status;
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-    decoration: BoxDecoration(
-      color: c.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(999),
-    ),
-    child: Text(
-      label,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w600,
-        color: c,
-        letterSpacing: 0.3,
-      ),
-    ),
+  return StatusChip(
+    label: label[0].toUpperCase() + label.substring(1),
+    color: c,
+    dense: true,
   );
 }
 
@@ -66,21 +54,5 @@ Widget reactionBadge(String reaction) {
     default:
       return const SizedBox.shrink();
   }
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-    decoration: BoxDecoration(
-      color: c.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(999),
-    ),
-    child: Text(
-      label,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w600,
-        color: c,
-      ),
-    ),
-  );
+  return StatusChip(label: label, color: c);
 }

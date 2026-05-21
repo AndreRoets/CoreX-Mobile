@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/client_session_provider.dart';
-import '../../theme.dart';
 import '../../widgets/client/client_collapse_menu.dart';
-import '../../widgets/feature_square.dart';
 import '../../widgets/greeting_card.dart';
+import '../../widgets/wide_banner.dart';
+import '../../widgets/ui/section_header.dart';
 import 'client_matches_list_screen.dart';
 
 class ClientHomeScreen extends StatelessWidget {
@@ -30,36 +30,20 @@ class ClientHomeScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     GreetingCard(userName: name),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Quick Access',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary(context),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    GridView.count(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      children: [
-                        FeatureSquare(
-                          icon: Icons.favorite_rounded,
-                          label: 'Core Matches',
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    const ClientMatchesListScreen(),
-                              ),
-                            );
-                          },
-                        ),
-                      ],
+                    const SizedBox(height: 28),
+                    const SectionHeader(label: 'Quick Access'),
+                    const SizedBox(height: 14),
+                    WideBanner(
+                      icon: Icons.favorite_rounded,
+                      label: 'Core Matches',
+                      subtitle: 'Properties picked for you',
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const ClientMatchesListScreen(),
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),

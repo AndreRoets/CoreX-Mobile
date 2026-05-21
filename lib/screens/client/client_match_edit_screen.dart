@@ -5,6 +5,7 @@ import '../../models/client_models.dart';
 import '../../services/api_service.dart' show ApiException;
 import '../../services/client_auth_service.dart';
 import '../../theme.dart';
+import '../../widgets/p24_suburbs_picker.dart';
 
 /// Used in both create and edit modes — pass [existing] for edit, omit for create.
 class ClientMatchEditScreen extends StatefulWidget {
@@ -31,7 +32,6 @@ class _ClientMatchEditScreenState extends State<ClientMatchEditScreen> {
   late TextEditingController _priceMin;
   late TextEditingController _priceMax;
   late TextEditingController _notes;
-  late TextEditingController _suburbSearch;
 
   String? _listingType; // 'sale' | 'rental'
   String? _propertyType; // null = Any
@@ -39,7 +39,8 @@ class _ClientMatchEditScreenState extends State<ClientMatchEditScreen> {
   int _bedsMin = 0;
   int _bathsMin = 0;
   int _garagesMin = 0;
-  final List<String> _suburbs = [];
+  List<int> _p24SuburbIds = [];
+  List<String> _p24SuburbNames = [];
 
   @override
   void initState() {
@@ -51,7 +52,6 @@ class _ClientMatchEditScreenState extends State<ClientMatchEditScreen> {
     _priceMax = TextEditingController(
         text: m?.priceMax != null ? m!.priceMax!.round().toString() : '');
     _notes = TextEditingController(text: m?.notes ?? '');
-    _suburbSearch = TextEditingController();
 
     _listingType = m?.listingType;
     _propertyType = m?.propertyType;
@@ -60,10 +60,12 @@ class _ClientMatchEditScreenState extends State<ClientMatchEditScreen> {
     _bathsMin = m?.bathsMin ?? 0;
     _garagesMin = m?.garagesMin ?? 0;
     if (m != null) {
-      _suburbs.addAll(m.suburbs);
-      if (_suburbs.isEmpty && m.suburb != null && m.suburb!.isNotEmpty) {
-        _suburbs.add(m.suburb!);
-      }
+      _p24SuburbIds = [...m.p24SuburbIds];
+      // m.suburbs is index-aligned with m.p24SuburbIds (server-synced).
+      _p24SuburbNames = [
+        for (var i = 0; i < _p24SuburbIds.length; i++)
+          i < m.suburbs.length ? m.suburbs[i] : 'Suburb ${_p24SuburbIds[i]}'
+      ];
     }
 
     _loadOptions();
@@ -75,7 +77,6 @@ class _ClientMatchEditScreenState extends State<ClientMatchEditScreen> {
     _priceMin.dispose();
     _priceMax.dispose();
     _notes.dispose();
-    _suburbSearch.dispose();
     super.dispose();
   }
 
@@ -117,8 +118,7 @@ class _ClientMatchEditScreenState extends State<ClientMatchEditScreen> {
       bedsMin: _bedsMin > 0 ? _bedsMin : null,
       bathsMin: _bathsMin > 0 ? _bathsMin : null,
       garagesMin: _garagesMin > 0 ? _garagesMin : null,
-      suburb: _suburbs.isNotEmpty ? _suburbs.first : null,
-      suburbs: _suburbs,
+      p24SuburbIds: _p24SuburbIds,
       notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
     );
   }
@@ -403,46 +403,15 @@ class _ClientMatchEditScreenState extends State<ClientMatchEditScreen> {
   }
 
   Widget _suburbsPicker() {
-    void addCustom() {
-      final t = _suburbSearch.text.trim();
-      if (t.isEmpty) return;
-      if (!_suburbs.contains(t)) {
+    return P24SuburbsPicker(
+      initialIds: _p24SuburbIds,
+      initialNames: _p24SuburbNames,
+      onChanged: (ids, names) {
         setState(() {
-          _suburbs.add(t);
-          _suburbSearch.clear();
+          _p24SuburbIds = ids;
+          _p24SuburbNames = names;
         });
-      }
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (_suburbs.isNotEmpty) ...[
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: _suburbs
-                .map((s) => InputChip(
-                      label: Text(s),
-                      onDeleted: () => setState(() => _suburbs.remove(s)),
-                    ))
-                .toList(),
-          ),
-          const SizedBox(height: 8),
-        ],
-        TextField(
-          controller: _suburbSearch,
-          decoration: InputDecoration(
-            border: const OutlineInputBorder(),
-            hintText: 'Add a suburb',
-            suffixIcon: IconButton(
-              icon: const Icon(Icons.add),
-              onPressed: addCustom,
-            ),
-          ),
-          onSubmitted: (_) => addCustom(),
-        ),
-      ],
+      },
     );
   }
 

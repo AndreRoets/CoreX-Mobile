@@ -5,8 +5,12 @@ import '../../models/contact.dart';
 import '../../models/visibility.dart';
 import '../../providers/visibility_provider.dart';
 import '../../services/api_service.dart';
+import '../../models/branding.dart';
 import '../../theme.dart';
 import '../../widgets/agent_filter_bar.dart';
+import '../../widgets/ui/glow_button.dart';
+import '../../widgets/ui/list_row.dart';
+import '../../widgets/ui/status_chip.dart';
 import 'contact_show_screen.dart';
 import 'new_contact_screen.dart';
 
@@ -107,11 +111,7 @@ class _ContactsListScreenState extends State<ContactsListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Contacts')),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: AppTheme.brand,
-        onPressed: _openNew,
-        child: const Icon(Icons.add_rounded, color: Colors.white),
-      ),
+      floatingActionButton: _GlowFab(onPressed: _openNew),
       body: Column(
         children: [
           Padding(
@@ -160,19 +160,14 @@ class _ContactsListScreenState extends State<ContactsListScreen> {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              children: [
-                Icon(Icons.error_outline_rounded,
-                    size: 32, color: AppTheme.textSecondary(context)),
-                const SizedBox(height: 8),
-                Text(_error!,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppTheme.textSecondary(context))),
-                const SizedBox(height: 12),
-                ElevatedButton(onPressed: _load, child: const Text('Retry')),
-              ],
+          EmptyState(
+            icon: Icons.error_outline_rounded,
+            title: 'Could not load contacts',
+            subtitle: _error,
+            action: SizedBox(
+              width: 180,
+              child: GlowButton(
+                  onPressed: _load, child: const Text('Retry')),
             ),
           ),
         ],
@@ -182,22 +177,12 @@ class _ContactsListScreenState extends State<ContactsListScreen> {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          Padding(
-            padding: const EdgeInsets.all(40),
-            child: Column(
-              children: [
-                Icon(Icons.person_add_alt_1_rounded,
-                    size: 40, color: AppTheme.textMuted(context)),
-                const SizedBox(height: 12),
-                Text(
-                  _search.isEmpty
-                      ? 'No contacts yet — tap + to add your first.'
-                      : 'No contacts match "$_search".',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppTheme.textSecondary(context)),
-                ),
-              ],
-            ),
+          EmptyState(
+            icon: Icons.person_add_alt_1_rounded,
+            title: _search.isEmpty ? 'No contacts yet' : 'No matches',
+            subtitle: _search.isEmpty
+                ? 'Tap + to add your first contact.'
+                : 'No contacts match "$_search".',
           ),
         ],
       );
@@ -212,110 +197,38 @@ class _ContactsListScreenState extends State<ContactsListScreen> {
   }
 
   Widget _tile(Contact c) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppTheme.radius),
+    final brand = BrandColors.of(context);
+    return ListRow(
       onTap: () => _openContact(c.id),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppTheme.surface(context),
-          borderRadius: BorderRadius.circular(AppTheme.radius),
-          border: Border.all(color: AppTheme.borderColor(context)),
+      leading: CircleAvatar(
+        radius: 20,
+        backgroundColor: brand.defaultColor,
+        child: Text(
+          _initials(c.fullName),
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: Branding.onColor(brand.defaultColor),
+          ),
         ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: AppTheme.brandDark,
-              child: Text(
-                _initials(c.fullName),
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    c.fullName,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textPrimary(context),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      if (c.phone != null && c.phone!.isNotEmpty)
-                        Flexible(
-                          child: Text(
-                            c.phone!,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: AppTheme.textSecondary(context)),
-                          ),
-                        ),
-                      if (c.contactTypeName != null &&
-                          c.contactTypeName!.isNotEmpty) ...[
-                        const SizedBox(width: 8),
-                        _chip(c.contactTypeName!),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            if (c.whatsappCount > 0)
-              Container(
-                margin: const EdgeInsets.only(left: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF22C55E).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(AppTheme.radius),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.chat_rounded,
-                        size: 12, color: Color(0xFF22C55E)),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${c.whatsappCount}',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF22C55E),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+      ),
+      title: c.fullName,
+      subtitle: c.phone?.isNotEmpty == true ? c.phone : null,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (c.contactTypeName != null && c.contactTypeName!.isNotEmpty) ...[
+            StatusChip(label: c.contactTypeName!, color: brand.button, dense: true),
+            const SizedBox(width: 6),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _chip(String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: AppTheme.brand.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          color: AppTheme.brand,
-        ),
+          if (c.whatsappCount > 0)
+            StatusChip(
+              label: '${c.whatsappCount}',
+              color: const Color(0xFF22C55E),
+              icon: Icons.chat_rounded,
+              dense: true,
+            ),
+        ],
       ),
     );
   }
@@ -326,5 +239,28 @@ class _ContactsListScreenState extends State<ContactsListScreen> {
       return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
     }
     return name.isNotEmpty ? name[0].toUpperCase() : '?';
+  }
+}
+
+class _GlowFab extends StatelessWidget {
+  final VoidCallback onPressed;
+  const _GlowFab({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = BrandColors.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        boxShadow: AppTheme.brandGlow(brand.button, intensity: 0.35),
+      ),
+      child: FloatingActionButton(
+        backgroundColor: brand.button,
+        foregroundColor: Branding.onColor(brand.button),
+        onPressed: onPressed,
+        elevation: 0,
+        child: const Icon(Icons.add_rounded),
+      ),
+    );
   }
 }

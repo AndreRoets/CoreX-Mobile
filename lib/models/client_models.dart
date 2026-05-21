@@ -193,7 +193,10 @@ class ClientMatch {
   final int? bathsMin;
   final int? garagesMin;
   final String? suburb;
+  // Display-only P24-canonical names, index-aligned with [p24SuburbIds].
   final List<String> suburbs;
+  // Source of truth for the wishlist's location filter.
+  final List<int> p24SuburbIds;
   final List<String> mustHaveFeatures;
   final String? notes;
 
@@ -215,6 +218,7 @@ class ClientMatch {
     this.garagesMin,
     this.suburb,
     this.suburbs = const [],
+    this.p24SuburbIds = const [],
     this.mustHaveFeatures = const [],
     this.notes,
   });
@@ -242,6 +246,11 @@ class ClientMatch {
         suburb: json['suburb']?.toString(),
         suburbs: (json['suburbs'] as List? ?? const [])
             .map((e) => e.toString())
+            .toList(),
+        p24SuburbIds: (json['p24_suburb_ids'] as List? ?? const [])
+            .map((e) =>
+                e is num ? e.toInt() : int.tryParse(e.toString()) ?? 0)
+            .where((v) => v != 0)
             .toList(),
         mustHaveFeatures: (json['must_have_features'] as List? ?? const [])
             .map((e) => e.toString())
@@ -478,8 +487,9 @@ class ClientMatchInput {
   final int? bedsMin;
   final int? bathsMin;
   final int? garagesMin;
-  final String? suburb;
-  final List<String> suburbs;
+  // P24 suburb IDs — source of truth. Empty == "any suburb".
+  // The validator rejects `suburb` / `suburbs` on write, so we only send IDs.
+  final List<int> p24SuburbIds;
   final List<String> mustHaveFeatures;
   final String? notes;
 
@@ -493,8 +503,7 @@ class ClientMatchInput {
     this.bedsMin,
     this.bathsMin,
     this.garagesMin,
-    this.suburb,
-    this.suburbs = const [],
+    this.p24SuburbIds = const [],
     this.mustHaveFeatures = const [],
     this.notes,
   });
@@ -509,8 +518,7 @@ class ClientMatchInput {
         if (bedsMin != null) 'beds_min': bedsMin,
         if (bathsMin != null) 'baths_min': bathsMin,
         if (garagesMin != null) 'garages_min': garagesMin,
-        if (suburb != null) 'suburb': suburb,
-        'suburbs': suburbs,
+        'p24_suburb_ids': p24SuburbIds,
         'must_have_features': mustHaveFeatures,
         if (notes != null) 'notes': notes,
       };

@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
+import '../models/branding.dart';
 import '../theme.dart';
+import 'ui/hero_card.dart';
+import 'ui/icon_badge.dart';
 
+/// Greeting card shown at the top of the home hub. Brand-tinted gradient,
+/// soft halo, with a time-of-day badge in the trailing slot.
 class GreetingCard extends StatelessWidget {
   final String userName;
 
@@ -13,95 +18,11 @@ class GreetingCard extends StatelessWidget {
     return 'Good evening';
   }
 
-  String get _greetingEmoji {
+  IconData get _icon {
     final hour = DateTime.now().hour;
-    if (hour < 12) return 'sunrise';
-    if (hour < 17) return 'sun';
-    return 'moon';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isDark
-              ? [
-                  AppTheme.brandDark,
-                  AppTheme.brandDark.withValues(alpha: 0.6),
-                ]
-              : [
-                  AppTheme.brand.withValues(alpha: 0.08),
-                  AppTheme.brandDark.withValues(alpha: 0.05),
-                ],
-        ),
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-        border: Border.all(
-          color: isDark
-              ? AppTheme.brand.withValues(alpha: 0.15)
-              : AppTheme.brand.withValues(alpha: 0.12),
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _greeting,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: AppTheme.textSecondary(context),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  userName,
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary(context),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _formattedDate,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textMuted(context),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: AppTheme.brand.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(AppTheme.radius),
-            ),
-            child: Icon(
-              _greetingEmoji == 'sunrise'
-                  ? Icons.wb_twilight_rounded
-                  : _greetingEmoji == 'sun'
-                      ? Icons.wb_sunny_rounded
-                      : Icons.nightlight_round,
-              color: AppTheme.brand,
-              size: 24,
-            ),
-          ),
-        ],
-      ),
-    );
+    if (hour < 12) return Icons.wb_twilight_rounded;
+    if (hour < 17) return Icons.wb_sunny_rounded;
+    return Icons.nightlight_round;
   }
 
   String get _formattedDate {
@@ -112,5 +33,59 @@ class GreetingCard extends StatelessWidget {
     ];
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return '${days[now.weekday - 1]}, ${now.day} ${months[now.month - 1]} ${now.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = BrandColors.of(context);
+    return HeroCard(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _greeting.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.6,
+                    color: AppTheme.textSecondary(context),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  userName,
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                    color: AppTheme.textPrimary(context),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _formattedDate,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: AppTheme.textMuted(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconBadge(
+            icon: _icon,
+            tint: brand.icon,
+            size: 48,
+            iconSize: 24,
+            radius: 14,
+          ),
+        ],
+      ),
+    );
   }
 }

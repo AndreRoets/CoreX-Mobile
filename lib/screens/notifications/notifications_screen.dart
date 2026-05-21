@@ -4,6 +4,8 @@ import '../../models/notification_models.dart';
 import '../../providers/notifications_provider.dart';
 import '../../services/deep_link_router.dart';
 import '../../theme.dart';
+import '../../widgets/ui/list_row.dart';
+import '../../widgets/ui/section_header.dart';
 import 'notification_settings_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -50,7 +52,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ],
       ),
       body: RefreshIndicator(
-        color: AppTheme.brand,
+        color: Theme.of(context).colorScheme.primary,
         onRefresh: () => context.read<NotificationsProvider>().loadFeed(),
         child: p.loadingFeed && p.items.isEmpty
             ? const Center(child: CircularProgressIndicator())
@@ -72,24 +74,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Widget _empty(BuildContext context) {
     return ListView(
-      children: [
-        const SizedBox(height: 120),
-        Center(
-          child: Padding(
-            padding: const EdgeInsets.all(40),
-            child: Column(
-              children: [
-                Icon(Icons.notifications_off_outlined,
-                    size: 48, color: AppTheme.textMuted(context)),
-                const SizedBox(height: 12),
-                Text("You're all caught up.",
-                    style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.textPrimary(context))),
-              ],
-            ),
-          ),
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: const [
+        SizedBox(height: 80),
+        EmptyState(
+          icon: Icons.notifications_off_outlined,
+          title: "You're all caught up",
+          subtitle: 'Nothing new to look at right now.',
         ),
       ],
     );
@@ -145,16 +136,8 @@ class _PillarHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
-      child: Text(
-        label.toUpperCase(),
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.8,
-          color: AppTheme.textMuted(context),
-        ),
-      ),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+      child: SectionHeader(label: label),
     );
   }
 }
@@ -166,92 +149,113 @@ class _NotificationRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colour = severityColor(item.severity);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () async {
-          final p = context.read<NotificationsProvider>();
-          await p.markRead(item.id);
-          if (!context.mounted) return;
-          await DeepLinkRouter.open(context, item.actionUrl);
-        },
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: AppTheme.surface(context),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: AppTheme.cardGradient(context),
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          boxShadow: AppTheme.softShadow(context),
+          border: item.isRead
+              ? null
+              : Border.all(
+                  color: colour.withValues(alpha: 0.5), width: 1.2),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          child: InkWell(
             borderRadius: BorderRadius.circular(AppTheme.radius),
-            border: Border.all(
-              color: item.isRead
-                  ? AppTheme.borderColor(context)
-                  : colour.withValues(alpha: 0.35),
-            ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 4,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: colour,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+            onTap: () async {
+              final p = context.read<NotificationsProvider>();
+              await p.markRead(item.id);
+              if (!context.mounted) return;
+              await DeepLinkRouter.open(context, item.actionUrl);
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 4,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: colour,
+                      borderRadius: BorderRadius.circular(2),
+                      boxShadow: [
+                        BoxShadow(
+                            color: colour.withValues(alpha: 0.6),
+                            blurRadius: 6,
+                            spreadRadius: -1),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Text(
-                            item.title,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: item.isRead
-                                  ? FontWeight.w500
-                                  : FontWeight.w600,
-                              color: AppTheme.textPrimary(context),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                item.title,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: item.isRead
+                                      ? FontWeight.w600
+                                      : FontWeight.w700,
+                                  letterSpacing: -0.1,
+                                  color: AppTheme.textPrimary(context),
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
+                            if (!item.isRead)
+                              Container(
+                                margin: const EdgeInsets.only(left: 6, top: 4),
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: colour,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                        color: colour.withValues(alpha: 0.6),
+                                        blurRadius: 6,
+                                        spreadRadius: -1),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                        if (item.body.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            item.body,
+                            style: TextStyle(
+                                fontSize: 12.5,
+                                color: AppTheme.textSecondary(context)),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
+                        ],
+                        const SizedBox(height: 6),
+                        Text(
+                          _relTime(item.createdAt),
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.textMuted(context)),
                         ),
-                        if (!item.isRead)
-                          Container(
-                            margin: const EdgeInsets.only(left: 6, top: 4),
-                            width: 7,
-                            height: 7,
-                            decoration: BoxDecoration(
-                              color: colour,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
                       ],
                     ),
-                    if (item.body.isNotEmpty) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        item.body,
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.textSecondary(context)),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                    const SizedBox(height: 5),
-                    Text(
-                      _relTime(item.createdAt),
-                      style: TextStyle(
-                          fontSize: 11, color: AppTheme.textMuted(context)),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

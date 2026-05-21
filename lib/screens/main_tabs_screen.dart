@@ -64,28 +64,97 @@ class _MainTabsScreenState extends State<MainTabsScreen> {
           TasksScreen(embedded: true),
         ],
       ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: AppTheme.borderColor(context))),
+      bottomNavigationBar: _GlowNavBar(
+        index: _index,
+        onTap: _jumpTo,
+        accent: brand.button,
+        items: const [
+          _NavItem(icon: Icons.today_rounded, label: 'Today'),
+          _NavItem(icon: Icons.calendar_month_rounded, label: 'Calendar'),
+          _NavItem(icon: Icons.checklist_rounded, label: 'Tasks'),
+        ],
+      ),
+    );
+  }
+}
+
+class _NavItem {
+  final IconData icon;
+  final String label;
+  const _NavItem({required this.icon, required this.label});
+}
+
+class _GlowNavBar extends StatelessWidget {
+  final int index;
+  final ValueChanged<int> onTap;
+  final Color accent;
+  final List<_NavItem> items;
+
+  const _GlowNavBar({
+    required this.index,
+    required this.onTap,
+    required this.accent,
+    required this.items,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final muted = AppTheme.textMuted(context);
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+          12, 10, 12, MediaQuery.of(context).padding.bottom + 10),
+      decoration: BoxDecoration(
+        color: AppTheme.surface(context),
+        border: Border(
+          top: BorderSide(color: AppTheme.borderColor(context)),
         ),
-        child: BottomNavigationBar(
-          currentIndex: _index,
-          onTap: _jumpTo,
-          backgroundColor: AppTheme.surface(context),
-          selectedItemColor: brand.sidebar,
-          unselectedItemColor: AppTheme.textMuted(context),
-          type: BottomNavigationBarType.fixed,
-          selectedFontSize: 11,
-          unselectedFontSize: 11,
-          items: const [
-            BottomNavigationBarItem(
-                icon: Icon(Icons.today_rounded), label: 'Today'),
-            BottomNavigationBarItem(
-                icon: Icon(Icons.calendar_month_rounded), label: 'Calendar'),
-            BottomNavigationBarItem(
-                icon: Icon(Icons.checklist_rounded), label: 'Tasks'),
-          ],
-        ),
+      ),
+      child: Row(
+        children: List.generate(items.length, (i) {
+          final active = i == index;
+          final color = active ? accent : muted;
+          return Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(AppTheme.radius),
+              onTap: () => onTap(i),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOut,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: active
+                            ? accent.withValues(alpha: 0.16)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: active
+                            ? AppTheme.brandGlow(accent,
+                                intensity: 0.35, blur: 18)
+                            : null,
+                      ),
+                      child: Icon(items[i].icon, color: color, size: 22),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      items[i].label,
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 11,
+                        fontWeight:
+                            active ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
       ),
     );
   }

@@ -96,7 +96,12 @@ class CoreMatchSummary {
   final int? bathsMin;
   final int? garagesMin;
   final String? suburb;
+  // Display-only. P24-canonical names auto-synced server-side from
+  // [p24SuburbIds]. Index-aligned with [p24SuburbIds]. Do not submit.
   final List<String> suburbs;
+  // Source of truth for the wishlist's location filter. Submit these in
+  // PUT bodies as `p24_suburb_ids`. Empty == "any suburb".
+  final List<int> p24SuburbIds;
   final FeedbackSummary feedbackSummary;
   final String? updatedAt;
 
@@ -115,6 +120,7 @@ class CoreMatchSummary {
     this.garagesMin,
     this.suburb,
     this.suburbs = const [],
+    this.p24SuburbIds = const [],
     this.feedbackSummary = const FeedbackSummary(),
     this.updatedAt,
   });
@@ -123,6 +129,10 @@ class CoreMatchSummary {
     int? n(dynamic v) => v == null ? null : (v is num ? v.toInt() : int.tryParse(v.toString()));
     final subs = (j['suburbs'] as List? ?? const [])
         .map((e) => e.toString())
+        .toList();
+    final ids = (j['p24_suburb_ids'] as List? ?? const [])
+        .map((e) => e is num ? e.toInt() : int.tryParse(e.toString()) ?? 0)
+        .where((v) => v != 0)
         .toList();
     final fs = j['feedback_summary'];
     return CoreMatchSummary(
@@ -140,6 +150,7 @@ class CoreMatchSummary {
       garagesMin: n(j['garages_min']),
       suburb: j['suburb']?.toString(),
       suburbs: subs,
+      p24SuburbIds: ids,
       feedbackSummary: fs is Map
           ? FeedbackSummary.fromJson(Map<String, dynamic>.from(fs))
           : const FeedbackSummary(),
@@ -210,6 +221,7 @@ class CoreMatch extends CoreMatchSummary {
     super.garagesMin,
     super.suburb,
     super.suburbs,
+    super.p24SuburbIds,
     super.feedbackSummary,
     super.updatedAt,
     this.mustHaveFeatures = const [],
@@ -242,6 +254,7 @@ class CoreMatch extends CoreMatchSummary {
       garagesMin: base.garagesMin,
       suburb: base.suburb,
       suburbs: base.suburbs,
+      p24SuburbIds: base.p24SuburbIds,
       feedbackSummary: base.feedbackSummary,
       updatedAt: base.updatedAt,
       mustHaveFeatures: feats,

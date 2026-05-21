@@ -9,7 +9,17 @@ class TaskCard extends StatelessWidget {
   final VoidCallback? onDismiss;
   final VoidCallback? onTap;
 
-  const TaskCard({super.key, required this.task, this.onComplete, this.onDismiss, this.onTap});
+  const TaskCard({
+    super.key,
+    required this.task,
+    this.onComplete,
+    this.onDismiss,
+    this.onTap,
+  });
+
+  static const _done = Color(0xFF22C55E);
+  static const _skip = Color(0xFF6B7280);
+  static const _overdue = Color(0xFFEF4444);
 
   @override
   Widget build(BuildContext context) {
@@ -24,114 +34,170 @@ class TaskCard extends StatelessWidget {
         }
         return false;
       },
-      background: Container(
-        alignment: Alignment.centerLeft,
+      background: _swipeBg(
+        align: Alignment.centerLeft,
+        color: _done,
+        icon: Icons.check_rounded,
+        label: 'Complete',
         padding: const EdgeInsets.only(left: 20),
-        decoration: BoxDecoration(
-          color: const Color(0xFF22c55e),
-          borderRadius: BorderRadius.circular(AppTheme.radius),
-        ),
-        child: const Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.check, color: Colors.white, size: 20),
-            SizedBox(height: 2),
-            Text('Complete', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w500)),
-          ],
-        ),
       ),
-      secondaryBackground: Container(
-        alignment: Alignment.centerRight,
+      secondaryBackground: _swipeBg(
+        align: Alignment.centerRight,
+        color: _skip,
+        icon: Icons.block_rounded,
+        label: "Didn't happen",
         padding: const EdgeInsets.only(right: 20),
-        decoration: BoxDecoration(
-          color: const Color(0xFF6b7280),
-          borderRadius: BorderRadius.circular(AppTheme.radius),
-        ),
-        child: const Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.block, color: Colors.white, size: 20),
-            SizedBox(height: 2),
-            Text("Didn't Happen", style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w500)),
-          ],
-        ),
       ),
-      child: DecoratedBox(
+      child: Container(
         decoration: BoxDecoration(
+          gradient: AppTheme.cardGradient(context),
           borderRadius: BorderRadius.circular(AppTheme.radius),
           boxShadow: AppTheme.softShadow(context),
+          border: task.isOverdue
+              ? Border.all(color: _overdue.withValues(alpha: 0.45), width: 1)
+              : null,
         ),
         child: Material(
-        color: AppTheme.surface(context),
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-        child: InkWell(
-          onTap: onTap,
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(AppTheme.radius),
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AppTheme.radius),
-              border: Border.all(color: task.isOverdue ? const Color(0xFFef4444).withValues(alpha: 0.4) : AppTheme.borderColor(context)),
-            ),
-            child: Row(
-              children: [
-                GestureDetector(
-                  onTap: onComplete,
-                  child: Container(
-                    width: 22,
-                    height: 22,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: task.isOverdue ? const Color(0xFFef4444) : AppTheme.borderColor(context),
-                        width: 2,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(AppTheme.radius),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: onComplete,
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: task.status == 'done'
+                            ? _done.withValues(alpha: 0.16)
+                            : Colors.transparent,
+                        border: Border.all(
+                          color: task.isOverdue
+                              ? _overdue
+                              : task.status == 'done'
+                                  ? _done
+                                  : AppTheme.textMuted(context),
+                          width: 2,
+                        ),
                       ),
+                      child: task.status == 'done'
+                          ? const Icon(Icons.check_rounded,
+                              size: 14, color: _done)
+                          : null,
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(task.title,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          task.title,
                           style: TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textPrimary(context),
-                            decoration: task.status == 'done' ? TextDecoration.lineThrough : null,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.1,
+                            color: AppTheme.textPrimary(context),
+                            decoration: task.status == 'done'
+                                ? TextDecoration.lineThrough
+                                : null,
                           ),
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
-                      if (task.propertyAddress != null) ...[
-                        const SizedBox(height: 2),
-                        Text(task.propertyAddress!, style: TextStyle(fontSize: 12, color: AppTheme.textSecondary(context)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (task.propertyAddress != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            task.propertyAddress!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textSecondary(context),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      PriorityBadge(priority: task.priority),
+                      if (task.dueDate != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          _formatDate(task.dueDate!),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: task.isOverdue
+                                ? _overdue
+                                : AppTheme.textMuted(context),
+                          ),
+                        ),
                       ],
                     ],
                   ),
-                ),
-                const SizedBox(width: 8),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    PriorityBadge(priority: task.priority),
-                    if (task.dueDate != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        _formatDate(task.dueDate!),
-                        style: TextStyle(fontSize: 10, color: task.isOverdue ? const Color(0xFFef4444) : AppTheme.textMuted(context)),
-                      ),
-                    ],
-                  ],
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _swipeBg({
+    required Alignment align,
+    required Color color,
+    required IconData icon,
+    required String label,
+    required EdgeInsets padding,
+  }) {
+    return Container(
+      alignment: align,
+      padding: padding,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: align == Alignment.centerLeft
+              ? Alignment.centerLeft
+              : Alignment.centerRight,
+          end: align == Alignment.centerLeft
+              ? Alignment.centerRight
+              : Alignment.centerLeft,
+          colors: [color, color.withValues(alpha: 0.7)],
+        ),
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: Colors.white, size: 22),
+          const SizedBox(height: 2),
+          Text(label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              )),
+        ],
       ),
     );
   }
 
   String _formatDate(DateTime dt) {
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
     return '${dt.day} ${months[dt.month - 1]}';
   }
 }

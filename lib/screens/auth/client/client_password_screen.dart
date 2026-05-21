@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../../../providers/client_session_provider.dart';
 import '../../../services/api_service.dart' show ApiException;
 import '../../../services/client_auth_service.dart';
+import '../../../widgets/ui/auth_scaffold.dart';
+import '../../../widgets/ui/glow_button.dart';
 import 'client_auth_shared.dart';
 import 'client_agency_picker_screen.dart';
 import 'client_otp_screen.dart';
@@ -131,51 +133,38 @@ class _ClientPasswordScreenState extends State<ClientPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Sign In')),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 16),
-                Text('Welcome back, ${widget.email}',
-                    style: const TextStyle(fontSize: 14)),
-                const SizedBox(height: 24),
-                TextFormField(
-                  controller: _passwordController,
-                  obscureText: true,
-                  autofillHints: const [AutofillHints.password],
-                  decoration: const InputDecoration(hintText: 'Password'),
-                  validator: (v) =>
-                      (v == null || v.isEmpty) ? 'Enter your password' : null,
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 16),
-                  Text(_error!,
-                      style: const TextStyle(color: Colors.redAccent)),
-                ],
-                const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: _busy ? null : _signIn,
-                  child: _busy
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Sign In'),
-                ),
-                TextButton(
-                  onPressed: _busy ? null : _forgot,
-                  child: const Text('Forgot password?'),
-                ),
-              ],
+    return AuthScaffold(
+      title: 'Welcome back',
+      subtitle: widget.email,
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextFormField(
+              controller: _passwordController,
+              obscureText: true,
+              autofillHints: const [AutofillHints.password],
+              decoration: const InputDecoration(
+                hintText: 'Password',
+                prefixIcon: Icon(Icons.lock_outline_rounded, size: 20),
+              ),
+              validator: (v) =>
+                  (v == null || v.isEmpty) ? 'Enter your password' : null,
             ),
-          ),
+            if (_error != null) AuthError(_error!),
+            const SizedBox(height: 24),
+            GlowButton(
+              onPressed: _busy ? null : _signIn,
+              loading: _busy,
+              child: const Text('Sign in'),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: _busy ? null : _forgot,
+              child: const Text('Forgot password?'),
+            ),
+          ],
         ),
       ),
     );

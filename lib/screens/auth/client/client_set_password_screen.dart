@@ -4,16 +4,11 @@ import 'package:provider/provider.dart';
 import '../../../providers/client_session_provider.dart';
 import '../../../services/api_service.dart' show ApiException;
 import '../../../services/client_auth_service.dart';
+import '../../../widgets/ui/auth_scaffold.dart';
+import '../../../widgets/ui/glow_button.dart';
 import 'client_auth_shared.dart';
 import 'client_agency_picker_screen.dart';
 
-// Screen 3 — set / rotate password.
-//
-// Two entry paths:
-//   1. After OTP verify: [bearerToken] is the short-lived activation token
-//      and [isFromActivation] is true. We do not have a session yet.
-//   2. Forced rotation: [bearerToken] is the long-lived session token.
-//      [isFromActivation] is false; the session is already in the provider.
 class ClientSetPasswordScreen extends StatefulWidget {
   final String bearerToken;
   final bool isFromActivation;
@@ -60,7 +55,6 @@ class _ClientSetPasswordScreenState extends State<ClientSetPasswordScreen> {
         deviceName: defaultDeviceName(),
       );
 
-      // Persist long-lived session token + apply to provider.
       await _api.saveToken(resp.token);
       if (!mounted) return;
 
@@ -71,8 +65,6 @@ class _ClientSetPasswordScreenState extends State<ClientSetPasswordScreen> {
       if (resp.agencies.length > 1 &&
           resp.client.lockedToAgencyId == null &&
           resp.client.currentAgencyId == null) {
-        // Multi-agency client → agency picker. AuthGate will land them on
-        // home once an agency is chosen.
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(
             builder: (_) => const ClientAgencyPickerScreen(initialPick: true),
@@ -80,7 +72,6 @@ class _ClientSetPasswordScreenState extends State<ClientSetPasswordScreen> {
           (r) => false,
         );
       } else {
-        // AuthGate will swap to ClientHomeScreen on next rebuild.
         Navigator.of(context).popUntil((r) => r.isFirst);
       }
     } on ApiException catch (e) {
@@ -104,73 +95,55 @@ class _ClientSetPasswordScreenState extends State<ClientSetPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.isFromActivation
-            ? 'Create Password'
-            : 'Update Password'),
-        automaticallyImplyLeading: widget.isFromActivation,
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 16),
-                Text(
-                  widget.isFromActivation
-                      ? 'Choose a password you will use to sign in next time.'
-                      : 'Your agent set a temporary password. Pick a new one to continue.',
-                  style: const TextStyle(fontSize: 14),
-                ),
-                const SizedBox(height: 24),
-                TextFormField(
-                  controller: _passwordController,
-                  obscureText: true,
-                  autofillHints: const [AutofillHints.newPassword],
-                  decoration: const InputDecoration(hintText: 'New password'),
-                  validator: (v) {
-                    if (v == null || v.length < 8) {
-                      return 'At least 8 characters';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _confirmController,
-                  obscureText: true,
-                  decoration:
-                      const InputDecoration(hintText: 'Confirm password'),
-                  validator: (v) {
-                    if (v != _passwordController.text) {
-                      return 'Passwords do not match';
-                    }
-                    return null;
-                  },
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 16),
-                  Text(_error!,
-                      style: const TextStyle(color: Colors.redAccent)),
-                ],
-                const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: _busy ? null : _submit,
-                  child: _busy
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Create Password & Sign In'),
-                ),
-              ],
+    return AuthScaffold(
+      title: widget.isFromActivation ? 'Create password' : 'Update password',
+      subtitle: widget.isFromActivation
+          ? 'Choose a password you will use to sign in next time.'
+          : 'Your agent set a temporary password. Pick a new one to continue.',
+      showBack: widget.isFromActivation,
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextFormField(
+              controller: _passwordController,
+              obscureText: true,
+              autofillHints: const [AutofillHints.newPassword],
+              decoration: const InputDecoration(
+                hintText: 'New password',
+                prefixIcon: Icon(Icons.lock_outline_rounded, size: 20),
+              ),
+              validator: (v) {
+                if (v == null || v.length < 8) {
+                  return 'At least 8 characters';
+                }
+                return null;
+              },
             ),
-          ),
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _confirmController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                hintText: 'Confirm password',
+                prefixIcon: Icon(Icons.lock_outline_rounded, size: 20),
+              ),
+              validator: (v) {
+                if (v != _passwordController.text) {
+                  return 'Passwords do not match';
+                }
+                return null;
+              },
+            ),
+            if (_error != null) AuthError(_error!),
+            const SizedBox(height: 24),
+            GlowButton(
+              onPressed: _busy ? null : _submit,
+              loading: _busy,
+              child: const Text('Create password & sign in'),
+            ),
+          ],
         ),
       ),
     );

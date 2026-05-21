@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/branding.dart';
 import '../theme.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/ui/section_header.dart';
+import '../widgets/ui/status_chip.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -10,45 +13,42 @@ class ProfileScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
+    final brand = BrandColors.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profile'),
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_rounded, color: AppTheme.textPrimary(context)),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
+      appBar: AppBar(title: const Text('Profile')),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         child: Column(
           children: [
-            const SizedBox(height: 20),
-            // Avatar
+            const SizedBox(height: 12),
             Container(
-              width: 80,
-              height: 80,
+              width: 96,
+              height: 96,
               decoration: BoxDecoration(
-                color: AppTheme.brandDark,
-                borderRadius: BorderRadius.circular(AppTheme.radius),
+                color: brand.defaultColor,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: AppTheme.brandGlow(brand.button, intensity: 0.3),
               ),
               child: Center(
                 child: Text(
                   _initials(auth.userName),
-                  style: const TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                    color: Branding.onColor(brand.defaultColor),
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             Text(
               auth.userName,
               style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.4,
                 color: AppTheme.textPrimary(context),
               ),
             ),
@@ -60,38 +60,24 @@ class ProfileScreen extends StatelessWidget {
                 color: AppTheme.textSecondary(context),
               ),
             ),
-            const SizedBox(height: 8),
-            // Role badge
-            if (user?['role'] != null)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppTheme.brand.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(AppTheme.radius),
-                ),
-                child: Text(
-                  (user!['role'] as String).toUpperCase(),
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.brand,
-                    letterSpacing: 0.5,
-                  ),
-                ),
+            if (user?['role'] != null) ...[
+              const SizedBox(height: 12),
+              StatusChip(
+                label: (user!['role'] as String).toUpperCase(),
+                color: brand.button,
               ),
-
+            ],
             const SizedBox(height: 32),
-
-            // Account details card
-            _InfoCard(
-              title: 'Account Details',
-              items: [
-                _InfoRow(label: 'Name', value: auth.userName),
-                _InfoRow(label: 'Email', value: user?['email'] ?? '-'),
-                _InfoRow(label: 'Role', value: user?['role'] ?? '-'),
-              ],
-              context: context,
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: SectionHeader(label: 'Account'),
             ),
+            const SizedBox(height: 12),
+            _InfoCard(items: [
+              _InfoRow(label: 'Name', value: auth.userName),
+              _InfoRow(label: 'Email', value: user?['email'] ?? '-'),
+              _InfoRow(label: 'Role', value: user?['role'] ?? '-'),
+            ]),
           ],
         ),
       ),
@@ -114,65 +100,55 @@ class _InfoRow {
 }
 
 class _InfoCard extends StatelessWidget {
-  final String title;
   final List<_InfoRow> items;
-  final BuildContext context;
-
-  const _InfoCard({
-    required this.title,
-    required this.items,
-    required this.context,
-  });
+  const _InfoCard({required this.items});
 
   @override
-  Widget build(BuildContext ctx) {
+  Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: AppTheme.surface(context),
+        gradient: AppTheme.cardGradient(context),
         borderRadius: BorderRadius.circular(AppTheme.radius),
-        border: Border.all(color: AppTheme.borderColor(context)),
+        boxShadow: AppTheme.softShadow(context),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textPrimary(context),
-            ),
-          ),
-          const SizedBox(height: 12),
-          ...items.map((item) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 80,
-                      child: Text(
-                        item.label,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppTheme.textMuted(context),
-                        ),
-                      ),
+          for (var i = 0; i < items.length; i++) ...[
+            if (i > 0)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Divider(
+                    height: 1, color: AppTheme.borderColor(context)),
+              ),
+            Row(
+              children: [
+                SizedBox(
+                  width: 80,
+                  child: Text(
+                    items[i].label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textMuted(context),
                     ),
-                    Expanded(
-                      child: Text(
-                        item.value,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: AppTheme.textPrimary(context),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              )),
+                Expanded(
+                  child: Text(
+                    items[i].value,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textPrimary(context),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

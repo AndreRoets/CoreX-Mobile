@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../models/branding.dart';
 import '../../../models/client_models.dart';
 import '../../../providers/client_session_provider.dart';
 import '../../../services/api_service.dart' show ApiException;
 import '../../../services/client_auth_service.dart';
+import '../../../theme.dart';
+import '../../../widgets/ui/auth_scaffold.dart';
+import '../../../widgets/ui/glow_button.dart';
+import '../../../widgets/ui/icon_badge.dart';
 
-// Screen 5 — agency picker.
-//
-// [initialPick] true means this is the first time the client lands here
-// (post-login on a multi-agency account). We block back-navigation in that
-// mode — they must pick before they can use the app. When opened later (gear
-// → Switch Agency, or the home top-bar tap), the back button is allowed.
 class ClientAgencyPickerScreen extends StatefulWidget {
   final bool initialPick;
   const ClientAgencyPickerScreen({super.key, this.initialPick = false});
@@ -37,71 +36,36 @@ class _ClientAgencyPickerScreenState extends State<ClientAgencyPickerScreen> {
 
     return PopScope(
       canPop: !widget.initialPick,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Choose Agency'),
-          automaticallyImplyLeading: !widget.initialPick,
-        ),
-        body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 12),
-                  child: Text(
-                    'Your email is on more than one agency contact list. '
-                    'Pick the one you want to view.',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Theme.of(context).hintColor,
-                    ),
-                  ),
+      child: AuthScaffold(
+        title: 'Choose agency',
+        subtitle:
+            'Your email is on more than one agency contact list. Pick the one you want to view.',
+        showBack: !widget.initialPick,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final a in agencies)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _AgencyRow(
+                  agency: a,
+                  selected: _selectedId == a.id,
+                  onTap: () => setState(() => _selectedId = a.id),
                 ),
-                Expanded(
-                  child: ListView.separated(
-                    itemCount: agencies.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, i) =>
-                        _AgencyRow(
-                          agency: agencies[i],
-                          selected: _selectedId == agencies[i].id,
-                          onTap: () =>
-                              setState(() => _selectedId = agencies[i].id),
-                        ),
-                  ),
-                ),
-                CheckboxListTile(
-                  value: _lock,
-                  onChanged: (v) => setState(() => _lock = v ?? false),
-                  title: const Text('Only use this agency'),
-                  subtitle: const Text(
-                      'Skips this picker on future sign-ins.'),
-                  controlAffinity: ListTileControlAffinity.leading,
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 8),
-                  Text(_error!,
-                      style: const TextStyle(color: Colors.redAccent)),
-                ],
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _busy || _selectedId == null ? null : _confirm,
-                    child: _busy
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Continue'),
-                  ),
-                ),
-              ],
+              ),
+            const SizedBox(height: 4),
+            _LockToggle(
+              value: _lock,
+              onChanged: (v) => setState(() => _lock = v),
             ),
-          ),
+            if (_error != null) AuthError(_error!),
+            const SizedBox(height: 20),
+            GlowButton(
+              onPressed: _busy || _selectedId == null ? null : _confirm,
+              loading: _busy,
+              child: const Text('Continue'),
+            ),
+          ],
         ),
       ),
     );
@@ -159,21 +123,128 @@ class _AgencyRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      onTap: onTap,
-      leading: Icon(
-        selected
-            ? Icons.radio_button_checked
-            : Icons.radio_button_unchecked,
-        color: selected ? Theme.of(context).colorScheme.primary : null,
+    final brand = BrandColors.of(context);
+    final accent = brand.button;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            gradient: selected ? null : AppTheme.cardGradient(context),
+            color: selected ? accent.withValues(alpha: 0.12) : null,
+            borderRadius: BorderRadius.circular(AppTheme.radius),
+            border: Border.all(
+              color: selected ? accent.withValues(alpha: 0.6) : Colors.transparent,
+              width: 1.5,
+            ),
+            boxShadow: AppTheme.softShadow(context),
+          ),
+          child: Row(
+            children: [
+              IconBadge(
+                icon: Icons.apartment_rounded,
+                size: 40,
+                iconSize: 20,
+                tint: accent,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      agency.name,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary(context),
+                      ),
+                    ),
+                    if (agency.isLocked || agency.isPreferred) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        agency.isLocked
+                            ? 'Currently locked'
+                            : 'Preferred',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary(context),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                color: selected ? accent : AppTheme.textMuted(context),
+                size: 22,
+              ),
+            ],
+          ),
+        ),
       ),
-      title: Text(agency.name),
-      subtitle: agency.isLocked
-          ? const Text('Currently locked')
-          : (agency.isPreferred ? const Text('Preferred') : null),
-      trailing: agency.isPreferred
-          ? const Icon(Icons.star, size: 18)
-          : const Icon(Icons.star_border, size: 18),
+    );
+  }
+}
+
+class _LockToggle extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  const _LockToggle({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = BrandColors.of(context);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        onTap: () => onChanged(!value),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: Row(
+            children: [
+              Icon(
+                value
+                    ? Icons.check_box_rounded
+                    : Icons.check_box_outline_blank_rounded,
+                color: value ? brand.button : AppTheme.textMuted(context),
+                size: 22,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Only use this agency',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimary(context),
+                      ),
+                    ),
+                    Text(
+                      'Skips this picker on future sign-ins.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

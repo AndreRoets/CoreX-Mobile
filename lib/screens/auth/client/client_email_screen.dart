@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../services/api_service.dart' show ApiException;
 import '../../../services/client_auth_service.dart';
+import '../../../widgets/ui/auth_scaffold.dart';
+import '../../../widgets/ui/glow_button.dart';
 import 'client_otp_screen.dart';
 import 'client_password_screen.dart';
 
@@ -79,57 +81,37 @@ class _ClientEmailScreenState extends State<ClientEmailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Client Sign-in')),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 16),
-                const Text(
-                  'Enter your email',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'We will check whether your agent has added you, then take '
-                  'you to the right next step.',
-                  style: TextStyle(fontSize: 13),
-                ),
-                const SizedBox(height: 24),
-                TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  autofillHints: const [AutofillHints.email],
-                  decoration: const InputDecoration(hintText: 'Email'),
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Enter your email';
-                    if (!v.contains('@')) return 'Enter a valid email';
-                    return null;
-                  },
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 16),
-                  Text(_error!, style: const TextStyle(color: Colors.redAccent)),
-                ],
-                const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: _busy ? null : _continue,
-                  child: _busy
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Continue'),
-                ),
-              ],
+    return AuthScaffold(
+      title: 'Welcome',
+      subtitle:
+          'Enter the email your agent has on file. We\'ll take you to the right next step.',
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextFormField(
+              controller: _emailController,
+              keyboardType: TextInputType.emailAddress,
+              autofillHints: const [AutofillHints.email],
+              decoration: const InputDecoration(
+                hintText: 'Email',
+                prefixIcon: Icon(Icons.mail_outline_rounded, size: 20),
+              ),
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return 'Enter your email';
+                if (!v.contains('@')) return 'Enter a valid email';
+                return null;
+              },
             ),
-          ),
+            if (_error != null) AuthError(_error!),
+            const SizedBox(height: 24),
+            GlowButton(
+              onPressed: _busy ? null : _continue,
+              loading: _busy,
+              child: const Text('Continue'),
+            ),
+          ],
         ),
       ),
     );

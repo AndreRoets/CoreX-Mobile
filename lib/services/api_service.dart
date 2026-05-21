@@ -1006,6 +1006,41 @@ class ApiService {
           {required int cityId, String q = ''}) =>
       _getP24('suburbs', {'city_id': '$cityId', 'q': q});
 
+  // --- /api/v1/p24/* — IDs returned here ARE Property24 suburb IDs ---
+  // Use these for the Core Matches / Buyer Wishlist picker. The `id` field
+  // on the suburb response is what gets submitted as `p24_suburb_ids` and
+  // matches `properties.p24_suburb_id` server-side. Distinct from
+  // `/mobile/p24/*` whose `id` is the CoreX-side surrogate.
+
+  Future<List<P24Location>> _getP24v1(
+      String path, Map<String, String> qp) async {
+    final uri = Uri.parse('$baseUrl/v1/p24/$path').replace(queryParameters: {
+      for (final e in qp.entries)
+        if (e.value.isNotEmpty) e.key: e.value,
+    });
+    final response =
+        await http.get(uri, headers: await _headers()).timeout(_timeout);
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final list = (data['data'] as List?) ?? const [];
+      return list
+          .map((e) => P24Location.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    throw ApiException(response.statusCode, 'Failed to load $path');
+  }
+
+  Future<List<P24Location>> getP24v1Provinces({String q = ''}) =>
+      _getP24v1('provinces', {'q': q});
+
+  Future<List<P24Location>> getP24v1Cities(
+          {required int provinceId, String q = ''}) =>
+      _getP24v1('cities', {'province_id': '$provinceId', 'q': q});
+
+  Future<List<P24Location>> getP24v1Suburbs(
+          {required int cityId, String q = ''}) =>
+      _getP24v1('suburbs', {'city_id': '$cityId', 'q': q});
+
   Future<Property> createProperty(Map<String, dynamic> data) async {
     final reqBody = jsonEncode(data);
     debugPrint('[createProperty] POST $baseUrl/mobile/properties');

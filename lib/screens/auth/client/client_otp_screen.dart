@@ -4,12 +4,13 @@ import 'package:flutter/material.dart';
 
 import '../../../services/api_service.dart' show ApiException;
 import '../../../services/client_auth_service.dart';
+import '../../../theme.dart';
+import '../../../widgets/ui/auth_scaffold.dart';
+import '../../../widgets/ui/glow_button.dart';
 import 'client_set_password_screen.dart';
 
 enum OtpPurpose { activation, recovery }
 
-// Screen 2 — send + verify OTP. Same screen handles activation (first-time
-// password set) and recovery (forgot-password flow).
 class ClientOtpScreen extends StatefulWidget {
   final String email;
   final OtpPurpose purpose;
@@ -129,76 +130,59 @@ class _ClientOtpScreenState extends State<ClientOtpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.purpose == OtpPurpose.recovery
-            ? 'Recover Password'
-            : 'Verify Email'),
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 16),
-              Text(
-                'We sent a 6-digit code to ${widget.email}.',
-                style: const TextStyle(fontSize: 14),
-              ),
-              const SizedBox(height: 24),
-              TextField(
-                controller: _codeController,
-                keyboardType: TextInputType.number,
-                maxLength: 6,
-                textAlign: TextAlign.center,
-                style:
-                    const TextStyle(fontSize: 22, letterSpacing: 8),
-                decoration: const InputDecoration(
-                  hintText: '······',
-                  counterText: '',
-                ),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 8),
-                Text(_error!,
-                    style: const TextStyle(color: Colors.redAccent)),
-              ],
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _busy ? null : _verify,
-                child: _busy
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Verify'),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: (_sending || _resendCooldown > 0) ? null : _send,
-                child: Text(
-                  _resendCooldown > 0
-                      ? 'Resend in ${_resendCooldown}s'
-                      : 'Resend code',
-                ),
-              ),
-              if (widget.purpose == OtpPurpose.recovery)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    'After verifying, you will set a new password.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).hintColor,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-            ],
+    return AuthScaffold(
+      title: widget.purpose == OtpPurpose.recovery
+          ? 'Recover password'
+          : 'Verify email',
+      subtitle: 'We sent a 6-digit code to ${widget.email}.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _codeController,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 10,
+              color: AppTheme.textPrimary(context),
+            ),
+            decoration: const InputDecoration(
+              hintText: '······',
+              counterText: '',
+            ),
           ),
-        ),
+          if (_error != null) AuthError(_error!),
+          const SizedBox(height: 20),
+          GlowButton(
+            onPressed: _busy ? null : _verify,
+            loading: _busy,
+            child: const Text('Verify'),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: (_sending || _resendCooldown > 0) ? null : _send,
+            child: Text(
+              _resendCooldown > 0
+                  ? 'Resend in ${_resendCooldown}s'
+                  : 'Resend code',
+            ),
+          ),
+          if (widget.purpose == OtpPurpose.recovery)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'After verifying, you will set a new password.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textMuted(context),
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+        ],
       ),
     );
   }

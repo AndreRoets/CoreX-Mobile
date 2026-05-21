@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../models/core_match.dart';
 import '../../services/api_service.dart';
 import '../../theme.dart';
+import '../../widgets/p24_suburbs_picker.dart';
 
 const Color _kDanger = Color(0xFFDC2626);
 
@@ -26,9 +27,9 @@ class _CoreMatchEditScreenState extends State<CoreMatchEditScreen> {
   late final TextEditingController _bathsMin;
   late final TextEditingController _garagesMin;
   late final TextEditingController _notes;
-  final _suburbInput = TextEditingController();
   final _featureInput = TextEditingController();
-  late final List<String> _suburbs;
+  late List<int> _p24SuburbIds;
+  late List<String> _p24SuburbNames;
   late final List<String> _features;
   bool _saving = false;
   Map<String, String> _fieldErrors = const {};
@@ -47,7 +48,13 @@ class _CoreMatchEditScreenState extends State<CoreMatchEditScreen> {
     _bathsMin = TextEditingController(text: m.bathsMin?.toString() ?? '');
     _garagesMin = TextEditingController(text: m.garagesMin?.toString() ?? '');
     _notes = TextEditingController(text: m.notes ?? '');
-    _suburbs = [...m.suburbs];
+    _p24SuburbIds = [...m.p24SuburbIds];
+    // Server returns suburbs index-aligned with p24_suburb_ids; trust that
+    // for display, and the IDs for submission.
+    _p24SuburbNames = [
+      for (var i = 0; i < _p24SuburbIds.length; i++)
+        i < m.suburbs.length ? m.suburbs[i] : 'Suburb ${_p24SuburbIds[i]}'
+    ];
     _features = [...m.mustHaveFeatures];
   }
 
@@ -62,7 +69,6 @@ class _CoreMatchEditScreenState extends State<CoreMatchEditScreen> {
     _bathsMin.dispose();
     _garagesMin.dispose();
     _notes.dispose();
-    _suburbInput.dispose();
     _featureInput.dispose();
     super.dispose();
   }
@@ -94,7 +100,8 @@ class _CoreMatchEditScreenState extends State<CoreMatchEditScreen> {
       'beds_min': n(_bedsMin),
       'baths_min': n(_bathsMin),
       'garages_min': n(_garagesMin),
-      'suburbs': _suburbs,
+      // suburb / suburbs are rejected by the validator — send IDs only.
+      'p24_suburb_ids': _p24SuburbIds,
       'must_have_features': _features,
       'notes': s(_notes),
     };
@@ -116,15 +123,6 @@ class _CoreMatchEditScreenState extends State<CoreMatchEditScreen> {
         SnackBar(content: Text('Failed: $e')),
       );
     }
-  }
-
-  void _addSuburb() {
-    final t = _suburbInput.text.trim();
-    if (t.isEmpty) return;
-    setState(() {
-      _suburbs.add(t);
-      _suburbInput.clear();
-    });
   }
 
   void _addFeature() {
@@ -166,8 +164,20 @@ class _CoreMatchEditScreenState extends State<CoreMatchEditScreen> {
           ]),
           _col('Garages Min', _garagesMin, 'garages_min', num: true),
           _label('Suburbs'),
-          _chipInput(_suburbInput, _addSuburb),
-          if (_suburbs.isNotEmpty) _chipList(_suburbs),
+          P24SuburbsPicker(
+            initialIds: _p24SuburbIds,
+            initialNames: _p24SuburbNames,
+            errorText: _fieldErrors['p24_suburb_ids'],
+            onChanged: (ids, names) {
+              setState(() {
+                _p24SuburbIds = ids;
+                _p24SuburbNames = names;
+                if (_fieldErrors.containsKey('p24_suburb_ids')) {
+                  _fieldErrors = {..._fieldErrors}..remove('p24_suburb_ids');
+                }
+              });
+            },
+          ),
           _label('Must-have Features'),
           _chipInput(_featureInput, _addFeature),
           if (_features.isNotEmpty) _chipList(_features),

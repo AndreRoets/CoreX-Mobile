@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../models/branding.dart';
 import '../models/dashboard_data.dart';
 import '../theme.dart';
 import 'priority_badge.dart';
@@ -14,12 +15,13 @@ class EventCard extends StatelessWidget {
     try {
       return Color(int.parse(event.colour.replaceFirst('#', '0xFF')));
     } catch (_) {
-      return const Color(0xFF6b7280);
+      return const Color(0xFF6B7280);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final brand = BrandColors.of(context);
     return Dismissible(
       key: Key('event-${event.id}'),
       direction: DismissDirection.endToStart,
@@ -31,79 +33,129 @@ class EventCard extends StatelessWidget {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
         decoration: BoxDecoration(
-          color: const Color(0xFF22c55e),
+          gradient: const LinearGradient(
+            begin: Alignment.centerRight,
+            end: Alignment.centerLeft,
+            colors: [Color(0xFF22C55E), Color(0xCC22C55E)],
+          ),
           borderRadius: BorderRadius.circular(AppTheme.radius),
         ),
         child: const Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.check, color: Colors.white, size: 20),
+            Icon(Icons.check_rounded, color: Colors.white, size: 22),
             SizedBox(height: 2),
-            Text('Complete', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w500)),
+            Text('Complete',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                )),
           ],
         ),
       ),
-      child: Material(
-        color: AppTheme.surface(context),
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-        child: InkWell(
-          onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: AppTheme.cardGradient(context),
           borderRadius: BorderRadius.circular(AppTheme.radius),
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AppTheme.radius),
-              border: Border.all(color: AppTheme.borderColor(context)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 3,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: _colour,
-                    borderRadius: BorderRadius.circular(2),
+          boxShadow: AppTheme.softShadow(context),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(AppTheme.radius),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 3,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: _colour,
+                      borderRadius: BorderRadius.circular(2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _colour.withValues(alpha: 0.6),
+                          blurRadius: 6,
+                          spreadRadius: -1,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            event.allDay ? 'All day' : _formatTime(event.eventDate),
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.brand),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              event.allDay
+                                  ? 'All day'
+                                  : _formatTime(event.eventDate),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: brand.button,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: _colour.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                event.eventType[0].toUpperCase() +
+                                    event.eventType.substring(1),
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: _colour),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          event.title,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.1,
+                            color: AppTheme.textPrimary(context),
                           ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: _colour.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(4),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (event.propertyAddress != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            event.propertyAddress!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textSecondary(context),
                             ),
-                            child: Text(
-                              event.eventType[0].toUpperCase() + event.eventType.substring(1),
-                              style: TextStyle(fontSize: 10, color: _colour),
-                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(event.title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textPrimary(context)), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      if (event.propertyAddress != null) ...[
-                        const SizedBox(height: 2),
-                        Text(event.propertyAddress!, style: TextStyle(fontSize: 12, color: AppTheme.textSecondary(context)), maxLines: 1, overflow: TextOverflow.ellipsis),
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                if (event.priority == 'high' || event.priority == 'critical') ...[
-                  const SizedBox(width: 8),
-                  PriorityBadge(priority: event.priority),
+                  if (event.priority == 'high' ||
+                      event.priority == 'critical') ...[
+                    const SizedBox(width: 8),
+                    PriorityBadge(priority: event.priority),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -111,7 +163,6 @@ class EventCard extends StatelessWidget {
     );
   }
 
-  String _formatTime(DateTime dt) {
-    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-  }
+  String _formatTime(DateTime dt) =>
+      '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 }

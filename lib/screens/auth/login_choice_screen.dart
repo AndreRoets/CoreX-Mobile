@@ -5,6 +5,8 @@ import '../../models/branding.dart';
 import '../../providers/branding_provider.dart';
 import '../../services/client_auth_service.dart';
 import '../../theme.dart';
+import '../../widgets/ui/glow_background.dart';
+import '../../widgets/ui/glow_button.dart';
 import '../login_screen.dart';
 import 'client/client_agent_qr_scanner_screen.dart';
 import 'client/client_email_screen.dart';
@@ -37,55 +39,71 @@ class _LoginChoiceScreenState extends State<LoginChoiceScreen> {
     final brand = BrandColors.of(context);
 
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (branding.logoUrl != null)
-                  SizedBox(
-                    height: 64,
-                    child: Image.network(
-                      branding.logoUrl!,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) =>
-                          _Wordmark(color: brand.defaultColor),
+      body: GlowBackground(
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 380),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _LogoMark(
+                      logoUrl: branding.logoUrl,
+                      tint: brand.button,
                     ),
-                  )
-                else
-                  _Wordmark(color: brand.defaultColor),
-                const SizedBox(height: 12),
-                Text(
-                  'Sign in to continue',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: AppTheme.textSecondary(context),
-                  ),
+                    const SizedBox(height: 28),
+                    Text(
+                      'CoreX OS',
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.6,
+                        color: AppTheme.textPrimary(context),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'SIGN IN TO CONTINUE',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 2.0,
+                        color: AppTheme.textSecondary(context),
+                      ),
+                    ),
+                    const SizedBox(height: 40),
+                    GlowButton(
+                      icon: Icons.work_outline_rounded,
+                      onPressed: () => _go('user', const LoginScreen()),
+                      child: const Text('Log in as User'),
+                    ),
+                    const SizedBox(height: 14),
+                    SoftButton(
+                      icon: Icons.person_outline_rounded,
+                      onPressed: () => _go('client', const ClientEmailScreen()),
+                      child: const Text('Log in as Client'),
+                    ),
+                    const SizedBox(height: 24),
+                    TextButton.icon(
+                      onPressed: () => _go(
+                        'client',
+                        const ClientAgentQrScannerScreen(),
+                      ),
+                      icon: Icon(Icons.qr_code_scanner_rounded,
+                          size: 18, color: AppTheme.textSecondary(context)),
+                      label: Text(
+                        'Scan agent QR',
+                        style: TextStyle(
+                          color: AppTheme.textSecondary(context),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 48),
-                _ChoiceButton(
-                  label: 'User',
-                  icon: Icons.work_outline,
-                  onPressed: () => _go('user', const LoginScreen()),
-                ),
-                const SizedBox(height: 16),
-                _ChoiceButton(
-                  label: 'Client',
-                  icon: Icons.person_outline,
-                  onPressed: () => _go('client', const ClientEmailScreen()),
-                ),
-                const SizedBox(height: 16),
-                _ChoiceButton(
-                  label: 'Scan agent QR',
-                  icon: Icons.qr_code_scanner,
-                  onPressed: () => _go(
-                    'client',
-                    const ClientAgentQrScannerScreen(),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -94,46 +112,39 @@ class _LoginChoiceScreenState extends State<LoginChoiceScreen> {
   }
 }
 
-class _ChoiceButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final VoidCallback onPressed;
-
-  const _ChoiceButton({
-    required this.label,
-    required this.icon,
-    required this.onPressed,
-  });
+class _CorexAssetLogo extends StatelessWidget {
+  const _CorexAssetLogo();
 
   @override
-  Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 360),
-      child: SizedBox(
-        width: double.infinity,
-        child: ElevatedButton.icon(
-          onPressed: onPressed,
-          icon: Icon(icon),
-          label: Text(label),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      Image.asset('assets/images/corex_logo.png', fit: BoxFit.contain);
 }
 
-class _Wordmark extends StatelessWidget {
-  final Color color;
-  const _Wordmark({required this.color});
+class _LogoMark extends StatelessWidget {
+  final String? logoUrl;
+  final Color tint;
+
+  const _LogoMark({required this.logoUrl, required this.tint});
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      'CoreX OS',
-      style: Theme.of(context).textTheme.displaySmall?.copyWith(
-            color: color,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.5,
-          ),
+    return Container(
+      width: 96,
+      height: 96,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: AppTheme.brandGlow(tint, intensity: 0.28, blur: 36),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: logoUrl != null
+            ? Image.network(
+                logoUrl!,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const _CorexAssetLogo(),
+              )
+            : const _CorexAssetLogo(),
+      ),
     );
   }
 }
