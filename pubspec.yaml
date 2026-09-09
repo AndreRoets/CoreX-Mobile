@@ -1,7 +1,7 @@
 name: corex_mobile
 description: CoreX OS - Home Finders Coastal mobile app.
 publish_to: 'none'
-version: 1.0.12+30
+version: 1.0.12+32
 
 environment:
   sdk: ^3.6.0
@@ -58,13 +58,16 @@ dependency_overrides:
   # the startStream / updated hasPermission API on record_platform_interface
   # 1.6.0, breaking even Android builds. Force the newer record_linux.
   record_linux: ^1.0.0
+  # Generates the native splash assets; kept as a regular dependency because
+  # Flutter 3.35+ excludes dev-dependency plugins from release builds while the
+  # plugin registrant still references them, which breaks assembleRelease.
+  flutter_native_splash: ^2.4.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.14.1
-  flutter_native_splash: ^2.4.1
 
 flutter:
   uses-material-design: true

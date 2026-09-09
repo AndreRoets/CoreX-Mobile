@@ -404,13 +404,104 @@ class _PropertyOverviewScreenState extends State<PropertyOverviewScreen> {
     return box.localToGlobal(Offset.zero) & box.size;
   }
 
+  /// The auth session, or null when the screen is hosted without one (tests,
+  /// and any future embed) — attribution then just falls back to the listing
+  /// agent rather than the whole button dying on a missing provider.
+  AuthProvider? _auth() {
+    try {
+      return context.read<AuthProvider>();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Appends `?agent=…` to the preview URL, keeping any query it already has.
+  static String _withAgent(String base, String agent) {
+    final uri = Uri.parse(base);
+    return uri
+        .replace(queryParameters: {...uri.queryParameters, 'agent': agent})
+        .toString();
+  }
+
+  /// Whose contact block the live-preview page renders — the web's share
+  /// chooser (hfc-dash `resources/js/property-share.js`) asks "my details or
+  /// the listing agent's?" and bakes the answer into the link as
+  /// `?agent=<my id>` / `?agent=listing`. Resolution stays entirely
+  /// server-side in `PropertyController::livePreview()`; this only builds the
+  /// same query string, so the app and web can never disagree on attribution.
+  ///
+  /// Returns null when the user dismisses the sheet. Skips the sheet when
+  /// there's nothing to choose: assistants never front a listing, an unknown
+  /// session can't be attributed, and the listing agent sharing their own
+  /// listing gets the same page either way.
+  Future<String?> _attributedPreviewUrl(PropertyOverview p) async {
+    final base = (p.livePreviewUrl ?? '').trim();
+    if (base.isEmpty) return null;
+    final listingUrl = _withAgent(base, 'listing');
+
+    final auth = _auth();
+    final myId = auth?.currentUserId;
+    if (myId == null || auth!.isAssistant) return listingUrl;
+    final agent = p.agent;
+    if (agent?.id != null && agent!.id == myId) return listingUrl;
+
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Text(
+                  'Whose contact details should show?',
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.person_outline),
+                title: const Text('My details'),
+                subtitle: Text(auth.userName),
+                onTap: () => Navigator.of(ctx).pop('me'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.badge_outlined),
+                title: const Text("Listing agent's details"),
+                subtitle: Text(
+                  (agent?.name ?? '').trim().isNotEmpty
+                      ? agent!.name
+                      : 'The agent on this listing',
+                ),
+                onTap: () => Navigator.of(ctx).pop('listing'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+    if (choice == null) return null;
+    return choice == 'me' ? _withAgent(base, '$myId') : listingUrl;
+  }
+
+  Future<void> _openLivePreview(PropertyOverview p) async {
+    final url = await _attributedPreviewUrl(p);
+    if (url == null || !mounted) return;
+    await _open(url);
+  }
+
   /// Hands the live listing page to the OS share sheet. The text is the
   /// title (and price when known) followed by the URL, so WhatsApp / email
   /// recipients see what it is before they tap. share_plus only throws on
   /// platform failures; surface those rather than fail silently.
   Future<void> _shareListing(PropertyOverview p) async {
-    final url = (p.livePreviewUrl ?? '').trim();
-    if (url.isEmpty) return;
+    final url = await _attributedPreviewUrl(p);
+    if (url == null || !mounted) return;
     final title = (p.title ?? '').trim();
     final price = (p.priceDisplay ?? '').trim();
     final heading = [
@@ -448,7 +539,7 @@ class _PropertyOverviewScreenState extends State<PropertyOverviewScreen> {
           child: OutlinedButton.icon(
             icon: const Icon(Icons.open_in_new, size: 16),
             label: const Text('Open Live Preview'),
-            onPressed: () => _open(p.livePreviewUrl),
+            onPressed: () => _openLivePreview(p),
           ),
         ),
         const SizedBox(height: 8),

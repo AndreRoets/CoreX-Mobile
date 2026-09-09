@@ -49,95 +49,113 @@ class ProfileScreen extends StatelessWidget {
               onTap: (tab) => corexNavigateTo(context, tab, CorexNavTab.me),
             )
           : null,
+      // Sized to fit one screen: header, one tile, actions pinned to the
+      // bottom. The scroll view only kicks in as a fallback for very short
+      // viewports or large accessibility fonts — on a normal phone nothing
+      // moves.
       body: ContentSafeArea(
         top: false,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 12),
-              Center(
-                child: Container(
-                  width: 96,
-                  height: 96,
-                  decoration: BoxDecoration(
-                    color: brand.defaultColor,
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: AppTheme.brandGlow(brand.button, intensity: 0.3),
-                  ),
-                  child: Center(
-                    child: Text(
-                      _initials(auth.userName),
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
-                        color: Branding.onColor(brand.defaultColor),
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              // IntrinsicHeight gives the Spacer a bounded height to fill
+              // inside the (otherwise unbounded) scroll view.
+              child: IntrinsicHeight(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(
+                            color: brand.defaultColor,
+                            borderRadius: BorderRadius.circular(18),
+                            boxShadow: AppTheme.brandGlow(brand.button,
+                                intensity: 0.3),
+                          ),
+                          child: Center(
+                            child: Text(
+                              _initials(auth.userName),
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.5,
+                                color: Branding.onColor(brand.defaultColor),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 10),
+                      Text(
+                        auth.userName,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.4,
+                          color: AppTheme.textPrimary(context),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        email,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.textSecondary(context),
+                        ),
+                      ),
+                      if (roleLabel.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Center(
+                          child: StatusChip(
+                            key: const ValueKey('profile-role-label'),
+                            label: roleLabel,
+                            color: brand.button,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      const SectionHeader(label: 'Account'),
+                      const SizedBox(height: 10),
+                      _InfoCard(items: [
+                        _InfoRow(label: 'Name', value: auth.userName),
+                        _InfoRow(
+                            label: 'Email', value: email.isEmpty ? '-' : email),
+                        _InfoRow(
+                            label: 'Role',
+                            value: roleLabel.isEmpty ? '-' : roleLabel),
+                      ]),
+                      const SizedBox(height: 12),
+                      _AgentDetailsTile(
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => AgentDetailsScreen(api: api),
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      const SizedBox(height: 20),
+                      _SignOutButton(onPressed: () => logoutAndReset(context)),
+                      const SizedBox(height: 4),
+                      // App Store guideline 5.1.1(v): account deletion has to
+                      // be reachable from inside the app. It sits under Sign
+                      // out — separate, quieter, and unmistakably its own
+                      // action — so it can't be mistaken for the everyday way
+                      // to leave.
+                      _DeleteAccountButton(
+                        onPressed: () => startAccountDeletion(context),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              const SizedBox(height: 18),
-              Text(
-                auth.userName,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.4,
-                  color: AppTheme.textPrimary(context),
-                ),
-              ),
-              if (roleLabel.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Center(
-                  child: StatusChip(
-                    key: const ValueKey('profile-role-label'),
-                    label: roleLabel,
-                    color: brand.button,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 6),
-              Text(
-                email,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppTheme.textSecondary(context),
-                ),
-              ),
-              const SizedBox(height: 32),
-              const SectionHeader(label: 'Account'),
-              const SizedBox(height: 12),
-              _InfoCard(items: [
-                _InfoRow(label: 'Name', value: auth.userName),
-                _InfoRow(label: 'Email', value: email.isEmpty ? '-' : email),
-                _InfoRow(
-                    label: 'Role',
-                    value: roleLabel.isEmpty ? '-' : roleLabel),
-              ]),
-              const SizedBox(height: 16),
-              _AgentDetailsTile(
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => AgentDetailsScreen(api: api),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 32),
-              _SignOutButton(onPressed: () => logoutAndReset(context)),
-              const SizedBox(height: 8),
-              // App Store guideline 5.1.1(v): account deletion has to be
-              // reachable from inside the app. It sits under Sign out —
-              // separate, quieter, and unmistakably its own action — so it
-              // can't be mistaken for the everyday way to leave.
-              _DeleteAccountButton(
-                onPressed: () => startAccountDeletion(context),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -153,8 +171,7 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
-/// Card-styled row that opens the agent details form. Same surface as the
-/// Account card above it so the two read as one group.
+/// Card-styled row that opens the agent details form.
 class _AgentDetailsTile extends StatelessWidget {
   final VoidCallback onTap;
   const _AgentDetailsTile({required this.onTap});
@@ -212,12 +229,6 @@ class _AgentDetailsTile extends StatelessWidget {
       ),
     );
   }
-}
-
-class _InfoRow {
-  final String label;
-  final String value;
-  const _InfoRow({required this.label, required this.value});
 }
 
 class _SignOutButton extends StatelessWidget {
@@ -285,6 +296,12 @@ class _DeleteAccountButton extends StatelessWidget {
   }
 }
 
+class _InfoRow {
+  final String label;
+  final String value;
+  const _InfoRow({required this.label, required this.value});
+}
+
 class _InfoCard extends StatelessWidget {
   final List<_InfoRow> items;
   const _InfoCard({required this.items});
@@ -293,7 +310,7 @@ class _InfoCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: AppTheme.cardGradient(context),
         borderRadius: BorderRadius.circular(AppTheme.radius),
@@ -305,9 +322,8 @@ class _InfoCard extends StatelessWidget {
           for (var i = 0; i < items.length; i++) ...[
             if (i > 0)
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Divider(
-                    height: 1, color: AppTheme.borderColor(context)),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Divider(height: 1, color: AppTheme.borderColor(context)),
               ),
             Row(
               children: [

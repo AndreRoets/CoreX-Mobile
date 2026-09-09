@@ -130,6 +130,28 @@ class AuthProvider extends ChangeNotifier {
     return null;
   }
 
+  /// Whether the signed-in user is an assistant. Assistants never front a
+  /// listing (web AT-267), so share/preview attribution falls back to the
+  /// listing agent for them. Walks the same flat / nested shapes as
+  /// [currentUserId]; false when the payload doesn't carry the flag — the
+  /// server then applies its own fallback, so a missing flag degrades to the
+  /// web's pre-AT-267 behaviour rather than breaking anything.
+  bool get isAssistant {
+    bool truthy(dynamic v) =>
+        v == true || v == 1 || v == '1' || v == 'true';
+    if (truthy(_user?['is_assistant'])) return true;
+    final nested = _user?['user'];
+    return nested is Map && truthy(nested['is_assistant']);
+  }
+
+  /// Seeds the in-memory profile without a network round-trip, so widget
+  /// tests can exercise user-dependent branches (attribution, ownership).
+  @visibleForTesting
+  void debugSetUser(Map<String, dynamic>? user) {
+    _user = user;
+    notifyListeners();
+  }
+
   Future<void> checkAuth() async {
     final token = await _api.getToken();
     _hasStoredToken = token != null;
