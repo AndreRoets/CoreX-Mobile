@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:tabler_icons/tabler_icons.dart';
 import '../../utils/external_launch.dart';
@@ -5,6 +6,8 @@ import '../../utils/external_launch.dart';
 import '../../models/client_models.dart';
 import '../../services/api_service.dart' show ApiException;
 import '../../services/client_auth_service.dart';
+import '../../services/image_cache.dart';
+import '../../services/image_cache_diagnostics.dart';
 import '../../theme/corex_accent_theme.dart';
 import '../../theme/corex_tokens.dart';
 import '../../widgets/client/not_for_me_sheet.dart';
@@ -202,10 +205,18 @@ class _ClientPropertyScreenState extends State<ClientPropertyScreen> {
                       controller: _pageController,
                       itemCount: images.length,
                       onPageChanged: (i) => setState(() => _imageIndex = i),
-                      itemBuilder: (_, i) => Image.network(
-                        images[i],
+                      itemBuilder: (_, i) => CachedNetworkImage(
+                        imageUrl: images[i],
+                        cacheManager: CoreXImageCache.manager,
+                        memCacheWidth: CoreXImageCache.thumbPx(
+                            context, MediaQuery.sizeOf(context).width),
+                        errorListener: (e) =>
+                            ImageCacheDiagnostics.recordFailure(images[i], e),
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
+                        placeholder: (_, __) => Container(
+                          color: CorexTokens.surfaceTop(context),
+                        ),
+                        errorWidget: (_, __, ___) => Container(
                           color: CorexTokens.surfaceTop(context),
                           child: Icon(TablerIcons.photo_off,
                               color: CorexTokens.textTertiary(context)),

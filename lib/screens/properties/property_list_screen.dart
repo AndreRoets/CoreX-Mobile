@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../utils/display_text.dart';
@@ -9,6 +10,8 @@ import '../../models/visibility.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/property_provider.dart';
 import '../../providers/visibility_provider.dart';
+import '../../services/image_cache.dart';
+import '../../services/image_cache_diagnostics.dart';
 import '../../widgets/agent_filter_bar.dart';
 import '../../widgets/ui/list_row.dart';
 import '../../widgets/ui/status_chip.dart';
@@ -587,12 +590,19 @@ class _PropertyCard extends StatelessWidget {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(14),
                     child: property.thumbnail != null
-                        ? Image.network(
-                            property.thumbnail!,
+                        ? CachedNetworkImage(
+                            imageUrl: property.thumbnail!,
+                            cacheManager: CoreXImageCache.manager,
+                            memCacheWidth:
+                                CoreXImageCache.thumbPx(context, 76),
+                            errorListener: (e) =>
+                                ImageCacheDiagnostics.recordFailure(
+                                    property.thumbnail!, e),
                             width: 76,
                             height: 76,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _placeholder(context),
+                            placeholder: (_, __) => _placeholder(context),
+                            errorWidget: (_, __, ___) => _placeholder(context),
                           )
                         : _placeholder(context),
                   ),

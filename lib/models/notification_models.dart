@@ -317,8 +317,16 @@ class OpenHours {
   /// Otherwise the moment must fall inside that weekday's window (which may
   /// wrap past midnight, in which case the early-morning tail belongs to the
   /// previous day's window).
+  ///
+  /// A schedule with the master switch on but every day still off has never
+  /// actually been configured by the user — [enabled] can flip true before
+  /// any window is chosen. Treating that as "block always" traps whoever
+  /// hits it in permanent, silent quiet hours with no obvious cause (this is
+  /// exactly what happened to a live account). Fail open instead: an
+  /// unconfigured schedule imposes no restriction, same as a disabled one.
   bool allowsAt(DateTime now) {
     if (!enabled) return true;
+    if (days.values.every((d) => !d.enabled)) return true;
     final nowMin = now.hour * 60 + now.minute;
 
     final today = days[now.weekday];

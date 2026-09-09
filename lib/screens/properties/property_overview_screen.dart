@@ -1,21 +1,28 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../utils/external_launch.dart';
 import '../../widgets/ui/content_width.dart';
 import '../../widgets/ui/tabbed_detail_scaffold.dart';
 import '../../config/env.dart';
+import '../../models/gallery_tags.dart';
 import '../../models/property_compliance.dart';
 import '../../models/property_drive.dart';
 import '../../models/property_overview.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/image_cache.dart';
+import '../../services/image_cache_diagnostics.dart';
 import '../../theme.dart';
 import '../../utils/app_time.dart';
 import '../../utils/display_text.dart';
 import 'add_contact_sheet.dart';
+import 'gallery_upload_sheet.dart';
 import 'property_drive_card.dart';
 import 'property_edit_screen.dart';
+import 'property_gallery_screen.dart';
 import 'rental_inspections_screen.dart';
 
 class PropertyOverviewScreen extends StatefulWidget {
@@ -40,6 +47,15 @@ class _PropertyOverviewScreenState extends State<PropertyOverviewScreen> {
   PropertyDriveData? _drive;
   bool _driveLoading = true;
   String? _driveError;
+
+  /// The property's photos, grouped by room — just enough for the Gallery
+  /// tab's summary card (count, room count, preview strip). The overview
+  /// payload only carries a [PropertyOverview.photosCount], so this comes
+  /// from a separate [ApiService.getProperty] call; the full grid lives in
+  /// [PropertyGalleryScreen], which does its own fetch when opened.
+  GalleryCategories _gallery = GalleryCategories.empty;
+  bool _galleryLoading = true;
+
   bool _loading = true;
   bool _sending = false;
   String? _error;
@@ -65,6 +81,7 @@ class _PropertyOverviewScreenState extends State<PropertyOverviewScreen> {
         _loading = false;
       });
       _loadComplianceAndContacts();
+      _loadGallery();
     } on ApiException catch (e) {
       if (!mounted) return;
       if (e.statusCode == 403) {
@@ -164,6 +181,38 @@ class _PropertyOverviewScreenState extends State<PropertyOverviewScreen> {
       final c = await _api.getPropertyCompliance(widget.propertyId);
       if (mounted) setState(() => _compliance = c);
     } catch (_) {/* keep last good state */}
+  }
+
+  /// Fetches just enough for the summary card — a count and a preview strip.
+  /// The full grid, tag list, and fingerprint (for reorder conflict
+  /// protection) are [PropertyGalleryScreen]'s own concern; it does a
+  /// complete fetch of its own when opened, so this screen doesn't need to
+  /// carry state it never renders.
+  Future<void> _loadGallery() async {
+    try {
+      final property = await _api.getProperty(widget.propertyId);
+      if (!mounted) return;
+      setState(() {
+        _gallery = GalleryCategories.fromJson(property.galleryCategories);
+        _galleryLoading = false;
+      });
+    } catch (_) {
+      // Non-fatal, same as compliance/contacts — the tab keeps whatever it
+      // last had and the agent can pull-to-refresh.
+      if (mounted) setState(() => _galleryLoading = false);
+    }
+  }
+
+  Future<void> _openGalleryUpload({String? initialTag}) async {
+    final uploaded = await GalleryUploadSheet.show(
+      context,
+      propertyId: widget.propertyId,
+      initialTag: initialTag,
+      lockTag: initialTag != null,
+    );
+    if ((uploaded ?? false) && mounted) {
+      await _loadGallery();
+    }
   }
 
   Future<void> _sendToMarket() async {
@@ -309,6 +358,11 @@ class _PropertyOverviewScreenState extends State<PropertyOverviewScreen> {
         children: _contactsTab(p),
       ),
       DetailTab(
+        label: 'Gallery',
+        count: _galleryLoading ? null : _gallery.totalCount,
+        children: _galleryTab(),
+      ),
+      DetailTab(
         label: 'Drive',
         count: _drive?.documents.length,
         children: [
@@ -340,6 +394,44 @@ class _PropertyOverviewScreenState extends State<PropertyOverviewScreen> {
     return n;
   }
 
+  /// Anchors the iPad share popover; harmless elsewhere.
+  final _shareButtonKey = GlobalKey();
+
+  Rect? _shareOrigin() {
+    final box =
+        _shareButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
+  }
+
+  /// Hands the live listing page to the OS share sheet. The text is the
+  /// title (and price when known) followed by the URL, so WhatsApp / email
+  /// recipients see what it is before they tap. share_plus only throws on
+  /// platform failures; surface those rather than fail silently.
+  Future<void> _shareListing(PropertyOverview p) async {
+    final url = (p.livePreviewUrl ?? '').trim();
+    if (url.isEmpty) return;
+    final title = (p.title ?? '').trim();
+    final price = (p.priceDisplay ?? '').trim();
+    final heading = [
+      if (title.isNotEmpty) title,
+      if (price.isNotEmpty) price,
+    ].join(' — ');
+    final text = heading.isEmpty ? url : '$heading\n$url';
+    try {
+      await Share.share(
+        text,
+        subject: title.isEmpty ? 'Property listing' : title,
+        sharePositionOrigin: _shareOrigin(),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open the share sheet')),
+      );
+    }
+  }
+
   List<Widget> _infoTab(PropertyOverview p) {
     return [
       _atAGlance(p),
@@ -357,6 +449,17 @@ class _PropertyOverviewScreenState extends State<PropertyOverviewScreen> {
             icon: const Icon(Icons.open_in_new, size: 16),
             label: const Text('Open Live Preview'),
             onPressed: () => _open(p.livePreviewUrl),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: OutlinedButton.icon(
+            key: _shareButtonKey,
+            icon: const Icon(Icons.share_outlined, size: 16),
+            label: const Text('Share Listing'),
+            onPressed: () => _shareListing(p),
           ),
         ),
         const SizedBox(height: 16),
@@ -388,6 +491,140 @@ class _PropertyOverviewScreenState extends State<PropertyOverviewScreen> {
       ];
     }
     return [_complianceCard(c)];
+  }
+
+  /// A count, a peek at the photos, and a way into the real thing. Filing and
+  /// drag-reorder used to live inline here via [PropertyGallery]
+  /// (`widgets/properties/property_gallery.dart`) — fine for a handful of
+  /// photos, unworkable once a property has 90+: everything stacked
+  /// vertically with no overview and tag-reordering buried in a tiny header
+  /// handle. [PropertyGalleryScreen] is the full-screen answer (grid layout,
+  /// room filter chips, a dedicated reorder-rooms sheet); this tab is now
+  /// just its front door.
+  List<Widget> _galleryTab() {
+    if (_galleryLoading) {
+      return [
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 24),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ];
+    }
+    final total = _gallery.totalCount;
+    final roomCount = _gallery.categories.keys.length;
+    final preview = <String>[
+      ..._gallery.unsorted,
+      for (final urls in _gallery.categories.values) ...urls,
+    ].take(8).toList();
+
+    return [
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppTheme.surface(context),
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          border: Border.all(color: AppTheme.borderColor(context)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.photo_library_outlined, color: AppTheme.brand),
+                const SizedBox(width: 8),
+                Text(
+                  '$total photo${total == 1 ? '' : 's'}',
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textPrimary(context)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              roomCount == 0
+                  ? 'Not sorted into rooms yet'
+                  : '$roomCount room${roomCount == 1 ? '' : 's'}',
+              style: TextStyle(
+                  fontSize: 12.5, color: AppTheme.textSecondary(context)),
+            ),
+            if (preview.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 64,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    for (final url in preview) ...[
+                      ClipRRect(
+                        borderRadius:
+                            BorderRadius.circular(AppTheme.radiusSmall),
+                        child: CachedNetworkImage(
+                          imageUrl: url,
+                          cacheManager: CoreXImageCache.manager,
+                          memCacheWidth: CoreXImageCache.thumbPx(context, 64),
+                          errorListener: (e) =>
+                              ImageCacheDiagnostics.recordFailure(url, e),
+                          width: 64,
+                          height: 64,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(
+                            width: 64,
+                            height: 64,
+                            color: AppTheme.surface2(context),
+                          ),
+                          errorWidget: (_, __, ___) => Container(
+                            width: 64,
+                            height: 64,
+                            color: AppTheme.surface2(context),
+                            child: Icon(Icons.broken_image,
+                                color: AppTheme.textMuted(context), size: 18),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.add_a_photo_outlined, size: 16),
+                    label: const Text('Add Photos'),
+                    onPressed: () => _openGalleryUpload(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.photo_library_outlined, size: 16),
+                    label: const Text('Manage Gallery'),
+                    onPressed: _openGalleryManager,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  Future<void> _openGalleryManager() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PropertyGalleryScreen(
+          propertyId: widget.propertyId,
+          api: widget.api,
+        ),
+      ),
+    );
+    if (mounted) await _loadGallery();
   }
 
   /// Everyone attached to the listing in one place — linked contacts plus the
@@ -428,7 +665,15 @@ class _PropertyOverviewScreenState extends State<PropertyOverviewScreen> {
           color: AppTheme.surface2(context),
           image: hasImage
               ? DecorationImage(
-                  image: NetworkImage(p.coverImage!),
+                  // Disk-cached — this hero repaints every time the
+                  // property is opened, and shouldn't refetch the same
+                  // cover photo each time.
+                  image: CachedNetworkImageProvider(
+                    p.coverImage!,
+                    cacheManager: CoreXImageCache.manager,
+                    maxWidth: CoreXImageCache.thumbPx(
+                        context, MediaQuery.sizeOf(context).width),
+                  ),
                   fit: BoxFit.cover,
                   colorFilter: ColorFilter.mode(
                       Colors.black.withValues(alpha: 0.35), BlendMode.darken),

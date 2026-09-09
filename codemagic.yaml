@@ -583,6 +583,11 @@ workflows:
             done
             echo "  waited ${WAITED}s; first-frame signal: ${SIGNAL}"
 
+            # The post-frame diagnostics (COREX_IMAGE_CACHE below) print a
+            # moment after the marker; give them a beat before the app is
+            # killed, or the advisory check reads as "missing" every run.
+            sleep 3
+
             xcrun simctl io "$UDID" screenshot "/tmp/smoke/${LABEL}.png" >/dev/null 2>&1 || true
             kill "$LAUNCH_JOB" 2>/dev/null || true
             wait "$LAUNCH_JOB" 2>/dev/null || true
@@ -630,6 +635,25 @@ workflows:
               return 1
             fi
             echo "  ok — no Dart exceptions or overflows during launch."
+
+            # Advisory: the photo disk cache self-test, printed from
+            # lib/services/image_cache_diagnostics.dart right after the first
+            # frame. It's the one place an iOS build tells us path_provider,
+            # sqflite and the temp dir all work — the cache is only ever
+            # exercised by hand on an Android emulator. ok=false or a missing
+            # line is worth reading, not a build failure.
+            if grep -n "COREX_IMAGE_CACHE" "$LOG"; then
+              if grep -q "COREX_IMAGE_CACHE ok=true" "$LOG"; then
+                echo "  ok — image cache self-test passed (line above)."
+              else
+                echo "  WARNING: image cache self-test did NOT report ok=true —"
+                echo "  read the line above (writable=/db_exists=/error=)."
+              fi
+            else
+              echo "  WARNING: no COREX_IMAGE_CACHE line in the launch log."
+              echo "  Either Dart stdout isn't reaching the pty (see the"
+              echo "  first-frame note) or the self-test never ran."
+            fi
 
             # Guard the case the marker cannot catch: a frame rendered, then
             # something painted a single flat colour over everything. Advisory

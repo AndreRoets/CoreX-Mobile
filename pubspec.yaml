@@ -46,6 +46,8 @@ dependencies:
   path_provider: ^2.1.4
   timezone: ^0.10.1
   open_filex: ^4.5.0
+  cached_network_image: ^3.4.1
+  flutter_cache_manager: ^3.4.1
 
 dependency_overrides:
   # Patched local copy: original tabler_icons subclasses IconData, which is

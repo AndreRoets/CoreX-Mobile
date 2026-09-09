@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../utils/display_text.dart';
@@ -10,8 +11,10 @@ import 'contact_compliance_screen.dart';
 import 'edit_contact_screen.dart';
 import 'new_match_screen.dart';
 import 'role_picker_sheet.dart';
+import 'contact_notes_testimonials_section.dart';
 import '../properties/property_create_screen.dart';
 import '../properties/property_overview_screen.dart';
+import '../core_matches/core_match_detail_screen.dart';
 
 const Color _kSuccess = Color(0xFF22C55E);
 
@@ -36,6 +39,7 @@ class _ContactShowScreenState extends State<ContactShowScreen> {
   bool _loading = true;
   String? _error;
   bool _whatsappBusy = false;
+  final _notesKey = GlobalKey<ContactNotesTestimonialsSectionState>();
 
   @override
   void initState() {
@@ -55,6 +59,9 @@ class _ContactShowScreenState extends State<ContactShowScreen> {
         _contact = c;
         _loading = false;
       });
+      // Pull-to-refresh (and the initial load) also re-fetches Notes &
+      // Testimonials — same DB rows the web cockpit shows, no client merge.
+      unawaited(_notesKey.currentState?.refresh());
     } on ApiException catch (e) {
       if (!mounted) return;
       if (e.statusCode == 403) {
@@ -187,6 +194,16 @@ class _ContactShowScreenState extends State<ContactShowScreen> {
                 )
               else
                 ...c.linkedProperties.map(_linkedTile),
+            ],
+          ),
+          DetailTab(
+            label: 'Notes',
+            children: [
+              ContactNotesTestimonialsSection(
+                key: _notesKey,
+                contactId: widget.contactId,
+                api: _api,
+              ),
             ],
           ),
         ],
@@ -447,50 +464,61 @@ class _ContactShowScreenState extends State<ContactShowScreen> {
       m.suburb,
       price,
     ].whereType<String>().where((s) => s.isNotEmpty).join(' · ');
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
         color: AppTheme.surface(context),
         borderRadius: BorderRadius.circular(AppTheme.radius),
-        border: Border.all(color: AppTheme.borderColor(context)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  m.name?.isNotEmpty == true ? m.name! : 'Match #${m.id}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary(context),
-                  ),
-                ),
-              ),
-              if (m.status != null && m.status!.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                _pill(titleCaseLabel(m.status), AppTheme.brand),
-              ],
-            ],
-          ),
-          if (subtitle.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                color: AppTheme.textSecondary(context),
-              ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          onTap: () => _openMatch(m.id),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppTheme.radius),
+              border: Border.all(color: AppTheme.borderColor(context)),
             ),
-          ],
-        ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        m.name?.isNotEmpty == true
+                            ? m.name!
+                            : 'Match #${m.id}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textPrimary(context),
+                        ),
+                      ),
+                    ),
+                    if (m.status != null && m.status!.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      _pill(titleCaseLabel(m.status), AppTheme.brand),
+                    ],
+                  ],
+                ),
+                if (subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textSecondary(context),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -627,6 +655,14 @@ class _ContactShowScreenState extends State<ContactShowScreen> {
         builder: (_) => PropertyOverviewScreen(propertyId: id),
       ),
     );
+  }
+
+  void _openMatch(int id) {
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(builder: (_) => CoreMatchDetailScreen(matchId: id)),
+        )
+        .then((_) => _load());
   }
 
   String _initials(String name) {

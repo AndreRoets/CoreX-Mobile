@@ -1,9 +1,12 @@
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../widgets/ui/content_width.dart';
 import '../../models/rental_inspections.dart';
 import '../../services/api_service.dart';
+import '../../services/image_cache.dart';
+import '../../services/image_cache_diagnostics.dart';
 import '../../theme.dart';
 import '../../utils/image_processing.dart';
 import '../../utils/image_upload.dart';
@@ -688,24 +691,25 @@ class _SectionCard extends StatelessWidget {
                 onTap: () => onTapImage(i),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                  child: Image.network(
-                    url,
+                  child: CachedNetworkImage(
+                    imageUrl: url,
+                    cacheManager: CoreXImageCache.manager,
+                    memCacheWidth: CoreXImageCache.thumbPx(
+                        context, MediaQuery.sizeOf(context).width / 3),
+                    errorListener: (e) =>
+                        ImageCacheDiagnostics.recordFailure(url, e),
                     fit: BoxFit.cover,
-                    loadingBuilder: (ctx, child, progress) =>
-                        progress == null
-                            ? child
-                            : Container(
-                                color: AppTheme.surface2(ctx),
-                                child: const Center(
-                                  child: SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
-                                  ),
-                                ),
-                              ),
-                    errorBuilder: (ctx, _, __) => Container(
+                    placeholder: (ctx, _) => Container(
+                      color: AppTheme.surface2(ctx),
+                      child: const Center(
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    ),
+                    errorWidget: (ctx, _, __) => Container(
                       color: AppTheme.surface2(ctx),
                       child: Icon(Icons.broken_image_outlined,
                           color: AppTheme.textMuted(ctx)),
@@ -784,14 +788,17 @@ class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
           minScale: 1,
           maxScale: 4,
           child: Center(
-            child: Image.network(
-              widget.images[i],
+            child: CachedNetworkImage(
+              imageUrl: widget.images[i],
+              cacheManager: CoreXImageCache.manager,
+              memCacheWidth: CoreXImageCache.thumbPx(
+                  context, MediaQuery.sizeOf(context).width),
+              errorListener: (e) =>
+                  ImageCacheDiagnostics.recordFailure(widget.images[i], e),
               fit: BoxFit.contain,
-              loadingBuilder: (_, child, progress) => progress == null
-                  ? child
-                  : const Center(
-                      child: CircularProgressIndicator(color: Colors.white)),
-              errorBuilder: (_, __, ___) => const Center(
+              placeholder: (_, __) =>
+                  const Center(child: CircularProgressIndicator(color: Colors.white)),
+              errorWidget: (_, __, ___) => const Center(
                 child: Icon(Icons.broken_image_outlined,
                     color: Colors.white54, size: 48),
               ),

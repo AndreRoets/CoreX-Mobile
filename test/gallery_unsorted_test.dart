@@ -200,4 +200,74 @@ void main() {
       expect(after.totalCount, 1);
     });
   });
+
+  group('GalleryReorderResult.fromJson', () {
+    test('reads a room-scoped reorder, including the new fingerprint', () {
+      final r = GalleryReorderResult.fromJson({
+        'message': 'Photo order updated.',
+        'room_tag': 'Kitchen',
+        'unknown_images': [],
+        'gallery_images': ['https://x/a.jpg', 'https://x/b.jpg'],
+        'gallery_categories': {
+          'categories': {
+            'Kitchen': ['https://x/b.jpg', 'https://x/a.jpg'],
+          },
+          'unsorted': [],
+        },
+        'gallery_fingerprint': 'sha1-new',
+      });
+
+      expect(r.roomTag, 'Kitchen');
+      expect(r.unknownImages, isEmpty);
+      expect(r.categories.categories['Kitchen'],
+          ['https://x/b.jpg', 'https://x/a.jpg']);
+      expect(r.galleryFingerprint, 'sha1-new');
+    });
+
+    test('room_tag null means the master grid was reordered', () {
+      final r = GalleryReorderResult.fromJson({
+        'message': 'Photo order updated.',
+        'room_tag': null,
+        'unknown_images': [],
+        'gallery_images': ['https://x/b.jpg', 'https://x/a.jpg'],
+        'gallery_categories': {'categories': {}, 'unsorted': []},
+        'gallery_fingerprint': 'sha1-new',
+      });
+
+      expect(r.roomTag, isNull);
+      expect(r.galleryImages, ['https://x/b.jpg', 'https://x/a.jpg']);
+    });
+
+    test('an unrecognised URL comes back in unknown_images without failing',
+        () {
+      final r = GalleryReorderResult.fromJson({
+        'message': 'Photo order updated.',
+        'room_tag': 'Kitchen',
+        'unknown_images': ['https://x/gone.jpg'],
+        'gallery_images': [],
+        'gallery_categories': {'categories': {}, 'unsorted': []},
+        'gallery_fingerprint': 'sha1-new',
+      });
+
+      expect(r.unknownImages, ['https://x/gone.jpg']);
+    });
+  });
+
+  group('TagReorderResult.fromJson', () {
+    test('reads the reordered available_tags list', () {
+      final r = TagReorderResult.fromJson({
+        'message': 'Tag order updated.',
+        'available_tags': ['Kitchen', 'Lounge', 'Patio'],
+      });
+
+      expect(r.message, 'Tag order updated.');
+      expect(r.availableTags, ['Kitchen', 'Lounge', 'Patio']);
+    });
+
+    test('missing available_tags degrades to empty rather than throwing', () {
+      final r = TagReorderResult.fromJson({'message': 'Tag order updated.'});
+
+      expect(r.availableTags, isEmpty);
+    });
+  });
 }

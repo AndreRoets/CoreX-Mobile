@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tabler_icons/tabler_icons.dart';
@@ -7,6 +8,8 @@ import '../../models/seller_models.dart';
 import '../../providers/client_session_provider.dart';
 import '../../services/api_service.dart' show ApiException;
 import '../../services/client_auth_service.dart';
+import '../../services/image_cache.dart';
+import '../../services/image_cache_diagnostics.dart';
 import '../../theme/corex_accent_theme.dart';
 import '../../theme/corex_tokens.dart';
 import '../../widgets/corex/corex_card.dart';
@@ -327,12 +330,20 @@ class _Thumb extends StatelessWidget {
     if (url == null || url!.isEmpty) return placeholder;
     return ClipRRect(
       borderRadius: radius,
-      child: Image.network(
-        url!,
+      child: CachedNetworkImage(
+        imageUrl: url!,
+        cacheManager: CoreXImageCache.manager,
+        memCacheWidth: CoreXImageCache.thumbPx(context, 76),
+        errorListener: (e) => ImageCacheDiagnostics.recordFailure(url!, e),
         width: 76,
         height: 76,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => placeholder,
+        placeholder: (_, __) => Container(
+          width: 76,
+          height: 76,
+          color: CorexTokens.surfaceTop(context),
+        ),
+        errorWidget: (_, __, ___) => placeholder,
       ),
     );
   }

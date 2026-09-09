@@ -60,11 +60,18 @@ class MessagingService {
   // `_pushChannelId` is referenced in three places that must stay in sync:
   //   - AndroidManifest `default_notification_channel_id` (background/killed
   //     pushes, rendered by the Firebase SDK)
-  //   - the backend's AndroidConfig `channel_id` (App\Services\Push\FcmService)
+  //   - `FcmService::ANDROID_CHANNEL_ID` in the hfc-dash backend
+  //     (app/Services/Push/FcmService.php) — that repo owns this contract
+  //     string; see .ai/specs/push-notifications.md
   //   - `_showLocal` below (foreground pushes, rendered by us)
   // Importance.high is what earns the heads-up banner; IMPORTANCE_DEFAULT only
-  // lands in the shade.
-  static const _pushChannelId = 'corex_push';
+  // lands in the shade. This value MUST be 'corex_alerts' — an earlier mobile
+  // change renamed it to 'corex_push' locally without checking it against the
+  // backend's actual constant, silently breaking every backgrounded/terminated
+  // push (they fell into FCM's auto-created default-importance fallback
+  // channel instead of this one). Do not rename this again without grepping
+  // the backend for the current value of ANDROID_CHANNEL_ID.
+  static const _pushChannelId = 'corex_alerts';
   static const _pushChannelName = 'CoreX notifications';
   static const _pushChannelDescription =
       'New leads, appointment reminders and other CoreX alerts.';
@@ -98,6 +105,7 @@ class MessagingService {
         .removeWhere((_, ts) => now.difference(ts) > _dedupWindow);
     final lastSeen = _recentFingerprints[fingerprint];
     if (lastSeen != null && now.difference(lastSeen) < _dedupWindow) {
+      debugPrint('[messaging] dedup suppressed foreground message: $fingerprint');
       _recentFingerprints[fingerprint] = now;
       return true;
     }
@@ -268,35 +276,53 @@ class MessagingService {
 
   void _onForegroundMessage(RemoteMessage msg) {
     final ctx = navigatorKey?.currentContext;
-    if (ctx == null) return;
+    if (ctx == null) {
+      debugPrint(
+          '[messaging] foreground message dropped: no navigator context (id=${msg.messageId})');
+      return;
+    }
 
     // Belt-and-braces: if the local user disabled push, swallow the foreground
     // presentation. The server should already be suppressing, but a stale
     // device-token or in-flight delivery can race the preference change.
     try {
       final np = Provider.of<NotificationsProvider>(ctx, listen: false);
-      if (!np.localPushEnabled) return;
+      if (!np.localPushEnabled) {
+        debugPrint(
+            '[messaging] foreground message dropped: localPushEnabled=false (id=${msg.messageId})');
+        return;
+      }
       // Quiet hours: outside the user's open-hours window we swallow the
       // in-app banner. Background/system-tray pushes can only be stopped by
       // the server honouring the same schedule (the app isn't running then).
-      if (!np.notificationsAllowedNow) return;
-    } catch (_) {
+      if (!np.notificationsAllowedNow) {
+        debugPrint(
+            '[messaging] foreground message dropped: outside open hours (id=${msg.messageId})');
+        return;
+      }
+    } catch (e) {
       // Fail closed: if we can't determine the user's push/quiet-hours
       // preference, suppress the banner rather than risk showing one the user
       // disabled.
+      debugPrint(
+          '[messaging] foreground message dropped: prefs lookup failed: $e (id=${msg.messageId})');
       return;
     }
 
     final title = msg.notification?.title ?? msg.data['title']?.toString();
     final body = msg.notification?.body ?? msg.data['body']?.toString();
-    if (title == null && body == null) return;
+    if (title == null && body == null) {
+      debugPrint(
+          '[messaging] foreground message dropped: no title/body (id=${msg.messageId})');
+      return;
+    }
 
     // Storm guard: drop duplicates and cap the banner rate before doing any
     // work, so a backend re-send loop can't lock up the UI thread.
     final fingerprint = (msg.messageId?.isNotEmpty ?? false)
         ? msg.messageId!
         : '${msg.data['type']}|$title|$body';
-    if (_shouldSuppressForeground(fingerprint)) return;
+    if (_shouldSuppressForeground(fingerprint)) return; // logged inside
 
     final action = _resolveAction(msg.data);
 

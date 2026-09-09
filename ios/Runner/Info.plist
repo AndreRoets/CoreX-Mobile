@@ -104,5 +104,14 @@
 		<false/>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<!-- Without this, iOS never wakes the app for a backgrounded/killed FCM
+		     push: didReceiveRemoteNotification:fetchCompletionHandler: is not
+		     invoked, so the firebase_messaging background isolate handler never
+		     runs and the token/message pipeline is unreliable. Required
+		     alongside Runner.entitlements' aps-environment. -->
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>remote-notification</string>
+		</array>
 	</dict>
 </plist>

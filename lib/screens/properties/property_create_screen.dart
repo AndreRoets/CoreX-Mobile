@@ -112,6 +112,10 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
   GalleryCategories _gallery = GalleryCategories.empty;
   GalleryTagsData? _liveTags;
 
+  /// Last-known `gallery_fingerprint`, threaded into every reorder call for
+  /// conflict protection. See [PropertyGallery.galleryFingerprint].
+  String? _galleryFingerprint;
+
   /// [UploadService.successCount] as of the last property fetch, so photos
   /// landed by the background drainer pull their real URLs in instead of
   /// sitting as local placeholders until the screen happens to reload.
@@ -312,8 +316,10 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
     }
     final p = provider.selectedProperty;
     if (p != null && mounted) {
-      setState(
-          () => _gallery = GalleryCategories.fromJson(p.galleryCategories));
+      setState(() {
+        _gallery = GalleryCategories.fromJson(p.galleryCategories);
+        _galleryFingerprint = p.galleryFingerprint;
+      });
     }
     await _loadGalleryTags();
   }
@@ -328,6 +334,25 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
         _liveTags = (_liveTags ?? GalleryTagsData.empty(_propertyId ?? 0))
             .withAvailable(result.availableTags);
       }
+    });
+  }
+
+  /// Adopts a `gallery/reorder` response — the recomputed gallery plus the
+  /// fresh fingerprint the next reorder call needs.
+  void _adoptReorderResult(GalleryReorderResult result) {
+    setState(() {
+      _gallery = result.categories;
+      _galleryFingerprint = result.galleryFingerprint;
+    });
+  }
+
+  /// Adopts a `gallery/tags/reorder` response — the room order the agent
+  /// dragged.
+  void _adoptTagReorderResult(TagReorderResult result) {
+    if (result.availableTags.isEmpty) return;
+    setState(() {
+      _liveTags = (_liveTags ?? GalleryTagsData.empty(_propertyId ?? 0))
+          .withAvailable(result.availableTags);
     });
   }
 
@@ -1044,8 +1069,11 @@ class _PropertyCreateScreenState extends State<PropertyCreateScreen> {
             propertyId: _propertyId!,
             gallery: _gallery,
             availableTags: liveTags,
+            galleryFingerprint: _galleryFingerprint,
             enabled: !_saving,
             onAssigned: _adoptAssignResult,
+            onReordered: _adoptReorderResult,
+            onTagsReordered: _adoptTagReorderResult,
             onRefreshRequested: _refreshProperty,
             // Only ever called from a space section header, always with that
             // space's name 2014 so the sheet opens locked to it rather than

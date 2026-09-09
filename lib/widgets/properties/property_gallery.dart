@@ -1,7 +1,10 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/gallery_tags.dart';
 import '../../services/api_service.dart';
+import '../../services/image_cache.dart';
+import '../../services/image_cache_diagnostics.dart';
 import '../../services/upload_queue.dart';
 import '../../services/upload_service.dart';
 import '../../theme.dart';
@@ -39,12 +42,24 @@ class PropertyGallery extends StatefulWidget {
   /// Rooms this property offers, from `/gallery/tags` (or an assign response).
   final List<String> availableTags;
 
+  /// The property's last-known `gallery_fingerprint`, for optimistic-
+  /// concurrency protection on a reorder. `null` is fine — the reorder call
+  /// simply omits it and skips the conflict check.
+  final String? galleryFingerprint;
+
   /// Disables every mutating affordance — used while the parent form saves.
   final bool enabled;
 
   /// A newer gallery / tag list arrived from an assign response; the parent
   /// should adopt both so its own state doesn't go stale behind this widget.
   final ValueChanged<GalleryAssignResult> onAssigned;
+
+  /// A photo drag-reorder was saved; the parent should adopt the recomputed
+  /// gallery and fingerprint the same way it does for [onAssigned].
+  final ValueChanged<GalleryReorderResult> onReordered;
+
+  /// A room drag-reorder was saved; the parent should adopt the new tag order.
+  final ValueChanged<TagReorderResult> onTagsReordered;
 
   /// The local photo list is stale (the server didn't recognise URLs we sent).
   /// The parent should re-fetch the property.
@@ -58,8 +73,11 @@ class PropertyGallery extends StatefulWidget {
     required this.propertyId,
     required this.gallery,
     required this.availableTags,
+    this.galleryFingerprint,
     required this.enabled,
     required this.onAssigned,
+    required this.onReordered,
+    required this.onTagsReordered,
     required this.onRefreshRequested,
     required this.onAddPhotos,
   });
@@ -82,6 +100,22 @@ class _PropertyGalleryState extends State<PropertyGallery> {
   final Set<String> _selected = {};
 
   bool _assigning = false;
+
+  /// True while a photo-reorder save is in flight. Gates *every* section's
+  /// drag affordance at once (not just the one being dragged) to keep a
+  /// second drag from racing the first's optimistic state.
+  bool _reordering = false;
+
+  /// The dragged-to order for one room, shown immediately while the save in
+  /// [_reorderPhotos] is in flight; cleared once the server confirms (or
+  /// rejects) it, at which point [widget.gallery] is the source of truth again.
+  GalleryCategories? _optimisticGallery;
+
+  bool _reorderingTags = false;
+
+  /// The dragged-to tag order, shown immediately while [_reorderTags]'s save
+  /// is in flight.
+  List<String>? _optimisticTags;
 
   @override
   void initState() {
@@ -228,10 +262,119 @@ class _PropertyGalleryState extends State<PropertyGallery> {
     }
   }
 
+  // ---- Reordering ----
+
+  /// Persists a drag result within one room's bucket. Applied optimistically
+  /// so the grid shows the drop in the same frame it happens; reverted if the
+  /// server rejects it (stale fingerprint, permission, or a dropped
+  /// connection) since at that point [widget.gallery] is the only order that
+  /// is actually true.
+  Future<void> _reorderPhotos(
+      String roomTag, List<String> currentUrls, int oldIndex, int newIndex) async {
+    if (_reordering) return;
+    final urls = List<String>.from(currentUrls);
+    if (newIndex > oldIndex) newIndex -= 1;
+    urls.insert(newIndex, urls.removeAt(oldIndex));
+
+    final base = _optimisticGallery ?? widget.gallery;
+    final cats = Map<String, List<String>>.from(base.categories);
+    cats[roomTag] = urls;
+
+    setState(() {
+      _reordering = true;
+      _optimisticGallery = GalleryCategories(categories: cats, unsorted: base.unsorted);
+    });
+
+    try {
+      final result = await _api.reorderGalleryImages(
+        widget.propertyId,
+        urls,
+        roomTag: roomTag,
+        fingerprint: widget.galleryFingerprint,
+      );
+      if (!mounted) return;
+      // Re-render straight from the response, same as [_assign] — the server
+      // has just recomputed the gallery, so there is no reason to keep the
+      // optimistic guess around once the real answer is in.
+      widget.onReordered(result);
+      setState(() {
+        _reordering = false;
+        _optimisticGallery = null;
+      });
+    } on StaleGalleryFingerprintException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _reordering = false;
+        _optimisticGallery = null;
+      });
+      _snack(e.message);
+      await widget.onRefreshRequested();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _reordering = false;
+        _optimisticGallery = null;
+      });
+      _snack(e.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _reordering = false;
+        _optimisticGallery = null;
+      });
+      _snack('Could not save that order — check your connection');
+    }
+  }
+
+  /// Persists a drag result over the room order itself. Same optimistic /
+  /// revert shape as [_reorderPhotos], scoped to the tag list instead of one
+  /// room's photos.
+  Future<void> _reorderTags(
+      List<String> currentTags, int oldIndex, int newIndex) async {
+    if (_reorderingTags) return;
+    final tags = List<String>.from(currentTags);
+    if (newIndex > oldIndex) newIndex -= 1;
+    tags.insert(newIndex, tags.removeAt(oldIndex));
+
+    setState(() {
+      _reorderingTags = true;
+      _optimisticTags = tags;
+    });
+
+    try {
+      final result = await _api.reorderGalleryTags(widget.propertyId, tags);
+      if (!mounted) return;
+      widget.onTagsReordered(result);
+      setState(() {
+        _reorderingTags = false;
+        _optimisticTags = null;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _reorderingTags = false;
+        _optimisticTags = null;
+      });
+      _snack(e.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _reorderingTags = false;
+        _optimisticTags = null;
+      });
+      _snack('Could not save that order — check your connection');
+    }
+  }
+
   // ---- Build ----
 
   @override
   Widget build(BuildContext context) {
+    // The optimistic order stands in for the server's until a drag's save
+    // resolves — see [_reorderPhotos] / [_reorderTags].
+    final gallery = _optimisticGallery ?? widget.gallery;
+    final liveTags = _optimisticTags ?? widget.availableTags;
+
     final queued = _queue.cachedItemsFor(widget.propertyId);
     final unsortedQueued = queued.where((e) => e.roomTag == null).toList();
 
@@ -240,13 +383,17 @@ class _PropertyGalleryState extends State<PropertyGallery> {
     //   any category the property still has photos under but no longer offers
     //   as a tag (a space the agent deleted). That last group would otherwise
     //   render nowhere — the same disappearing act as the unsorted bucket.
-    final liveTags = widget.availableTags;
-    final strayTags = widget.gallery.categories.keys
+    final strayTags = gallery.categories.keys
         .where((k) => !liveTags.contains(k))
         .toList();
 
     final showUnsorted =
-        widget.gallery.unsorted.isNotEmpty || unsortedQueued.isNotEmpty;
+        gallery.unsorted.isNotEmpty || unsortedQueued.isNotEmpty;
+
+    // Dragging the room order itself only makes sense with more than one
+    // room, and only while nothing else here is mid-save.
+    final canReorderTags =
+        widget.enabled && !_assigning && !_reorderingTags && liveTags.length > 1;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -259,23 +406,51 @@ class _PropertyGalleryState extends State<PropertyGallery> {
         if (showUnsorted)
           _buildSection(
             title: _unsortedLabel,
-            urls: widget.gallery.unsorted,
+            urls: gallery.unsorted,
             queued: unsortedQueued,
             isUnsorted: true,
             canAdd: false,
           ),
-        for (final tag in liveTags)
-          _buildSection(
-            title: tag,
-            urls: widget.gallery.categories[tag] ?? const [],
-            queued: queued.where((e) => e.roomTag == tag).toList(),
-            isUnsorted: false,
-            canAdd: true,
-          ),
+        if (canReorderTags)
+          ReorderableListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: false,
+            itemCount: liveTags.length,
+            onReorder: (oldIndex, newIndex) =>
+                _reorderTags(liveTags, oldIndex, newIndex),
+            itemBuilder: (ctx, i) {
+              final tag = liveTags[i];
+              return _buildSection(
+                key: ValueKey('tag-$tag'),
+                title: tag,
+                urls: gallery.categories[tag] ?? const [],
+                queued: queued.where((e) => e.roomTag == tag).toList(),
+                isUnsorted: false,
+                canAdd: true,
+                roomTag: tag,
+                tagDragHandle: ReorderableDragStartListener(
+                  index: i,
+                  child: Icon(Icons.drag_indicator,
+                      size: 18, color: AppTheme.textMuted(context)),
+                ),
+              );
+            },
+          )
+        else
+          for (final tag in liveTags)
+            _buildSection(
+              title: tag,
+              urls: gallery.categories[tag] ?? const [],
+              queued: queued.where((e) => e.roomTag == tag).toList(),
+              isUnsorted: false,
+              canAdd: true,
+              roomTag: tag,
+            ),
         for (final tag in strayTags)
           _buildSection(
             title: tag,
-            urls: widget.gallery.categories[tag] ?? const [],
+            urls: gallery.categories[tag] ?? const [],
             queued: queued.where((e) => e.roomTag == tag).toList(),
             isUnsorted: false,
             canAdd: false,
@@ -357,7 +532,9 @@ class _PropertyGalleryState extends State<PropertyGallery> {
           child: const Text('Clear'),
         );
         final file = ElevatedButton(
-          onPressed: (_assigning || !widget.enabled) ? null : _fileSelection,
+          onPressed: (_assigning || _reordering || !widget.enabled)
+              ? null
+              : _fileSelection,
           child: _assigning
               ? const SizedBox(
                   width: 16,
@@ -399,19 +576,35 @@ class _PropertyGalleryState extends State<PropertyGallery> {
   }
 
   Widget _buildSection({
+    Key? key,
     required String title,
     required List<String> urls,
     required List<PendingUpload> queued,
     required bool isUnsorted,
     required bool canAdd,
     String? subtitle,
+    String? roomTag,
+    Widget? tagDragHandle,
   }) {
     // The count is everything the agent can see in this room: what the server
     // holds plus what is still on its way there. Showing only the server's
     // number is what made a shoot look half-lost.
     final total = urls.length + queued.length;
 
+    // Dragging photos needs an unambiguous room to save the new order under,
+    // and a settled list to drag within — Unsorted has no reorder scope of
+    // its own (see [ApiService.reorderGalleryImages]), and a photo mid-upload
+    // has no server position yet to reorder relative to.
+    final canReorderPhotos = !isUnsorted &&
+        roomTag != null &&
+        widget.enabled &&
+        !_assigning &&
+        !_reordering &&
+        queued.isEmpty &&
+        urls.length > 1;
+
     return Container(
+      key: key,
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: AppTheme.surface(context),
@@ -437,6 +630,10 @@ class _PropertyGalleryState extends State<PropertyGallery> {
             ),
             child: Row(
               children: [
+                if (tagDragHandle != null) ...[
+                  tagDragHandle,
+                  const SizedBox(width: 4),
+                ],
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -469,7 +666,7 @@ class _PropertyGalleryState extends State<PropertyGallery> {
                 ),
                 if (isUnsorted && urls.isNotEmpty)
                   TextButton(
-                    onPressed: widget.enabled && !_assigning
+                    onPressed: widget.enabled && !_assigning && !_reordering
                         ? () => _selectAll(urls)
                         : null,
                     style: TextButton.styleFrom(
@@ -519,19 +716,39 @@ class _PropertyGalleryState extends State<PropertyGallery> {
                         ),
                       SizedBox(
                         height: 90,
-                        child: ListView(
-                          scrollDirection: Axis.horizontal,
-                          children: [
-                            for (final url in urls) ...[
-                              _remoteThumb(url),
-                              const SizedBox(width: 8),
-                            ],
-                            for (final item in queued) ...[
-                              _pendingThumb(item),
-                              const SizedBox(width: 8),
-                            ],
-                          ],
-                        ),
+                        child: canReorderPhotos
+                            ? ReorderableListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                buildDefaultDragHandles: false,
+                                itemCount: urls.length,
+                                onReorder: (oldIndex, newIndex) =>
+                                    _reorderPhotos(
+                                        roomTag, urls, oldIndex, newIndex),
+                                itemBuilder: (ctx, i) {
+                                  final url = urls[i];
+                                  return Padding(
+                                    key: ValueKey('photo-$roomTag-$url'),
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: ReorderableDelayedDragStartListener(
+                                      index: i,
+                                      child: _remoteThumb(url),
+                                    ),
+                                  );
+                                },
+                              )
+                            : ListView(
+                                scrollDirection: Axis.horizontal,
+                                children: [
+                                  for (final url in urls) ...[
+                                    _remoteThumb(url),
+                                    const SizedBox(width: 8),
+                                  ],
+                                  for (final item in queued) ...[
+                                    _pendingThumb(item),
+                                    const SizedBox(width: 8),
+                                  ],
+                                ],
+                              ),
                       ),
                     ],
                   ),
@@ -575,17 +792,31 @@ class _PropertyGalleryState extends State<PropertyGallery> {
   Widget _remoteThumb(String url) {
     final selected = _selected.contains(url);
     return GestureDetector(
-      onTap: widget.enabled && !_assigning ? () => _toggle(url) : null,
+      onTap: widget.enabled && !_assigning && !_reordering
+          ? () => _toggle(url)
+          : null,
       child: Stack(
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(AppTheme.radius),
-            child: Image.network(
-              url,
+            // Cached to disk (not just Flutter's in-memory ImageCache) so
+            // reopening this property's gallery — or just navigating back to
+            // it — doesn't re-download every photo again.
+            child: CachedNetworkImage(
+              imageUrl: url,
+              cacheManager: CoreXImageCache.manager,
+              memCacheWidth: CoreXImageCache.thumbPx(context, 120),
+              errorListener: (e) =>
+                  ImageCacheDiagnostics.recordFailure(url, e),
               width: 120,
               height: 90,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
+              placeholder: (_, __) => Container(
+                width: 120,
+                height: 90,
+                color: AppTheme.surface2(context),
+              ),
+              errorWidget: (_, __, ___) => Container(
                 width: 120,
                 height: 90,
                 color: AppTheme.surface2(context),

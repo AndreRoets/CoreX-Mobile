@@ -11,6 +11,7 @@ import '../providers/theme_provider.dart';
 import '../services/ai_consent.dart';
 import '../services/security_service.dart';
 import '../widgets/event_reminder_picker.dart';
+import '../widgets/image_cache_details.dart';
 import '../widgets/ui/icon_badge.dart';
 import '../widgets/ui/section_header.dart';
 import 'ai_data_screen.dart';
@@ -252,6 +253,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     color: AppTheme.textMuted(context),
                   ),
                 ),
+              ),
+              // Photo cache on this device. Here rather than a hidden dev
+              // menu so a TestFlight tester can read it back without a
+              // debugger — the only way to check iOS caching from Windows.
+              _SettingsTile(
+                icon: Icons.photo_library_outlined,
+                tint: brand.icon,
+                label: 'Image cache',
+                trailing: const ImageCacheSummary(),
+                onTap: () => showImageCacheDetails(context),
               ),
             ]),
           ],

@@ -61,11 +61,13 @@
              notification lands silently in the shade with no heads-up banner,
              which reads to the agent as "the push never arrived". Point the SDK
              at the high-importance channel MessagingService creates — the id
-             must stay in sync with `_pushChannelId` there and with the
-             `channel_id` the backend sends in AndroidConfig. -->
+             must stay in sync with `_pushChannelId` there and with
+             FcmService::ANDROID_CHANNEL_ID in the hfc-dash backend
+             (app/Services/Push/FcmService.php), which is the side that owns this
+             contract string ('corex_alerts', per .ai/specs/push-notifications.md). -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="corex_push" />
+            android:value="corex_alerts" />
         <!-- Without this the status-bar icon falls back to the full-colour
              launcher icon, which Android silhouettes into a white square. -->
         <meta-data

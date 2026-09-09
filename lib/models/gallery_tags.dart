@@ -134,11 +134,18 @@ class GalleryCategories {
     final out = <String, List<String>>{};
     final unsorted = <String>[];
 
+    // A server that has moved the bucket out to its own `unsorted` sibling
+    // has finished migrating: from then on `categories` holds rooms only, so
+    // a room an agent actually named "Unsorted" must stay a room (folding it
+    // into the bucket would render it empty and make it impossible to
+    // reorder). Without the sibling — the flat shape, or a mid-migration
+    // server still nesting the bucket — an "Unsorted" key IS the bucket.
+    final hasSiblingBucket =
+        hasCategoriesKey && raw[_legacyUnsortedKey] is List;
     cats.forEach((k, v) {
       final key = k.toString();
-      // A flat-shaped payload has `unsorted` sitting alongside the tags; don't
-      // mistake it for a room called "unsorted".
-      final isUnsorted = key.trim().toLowerCase() == _legacyUnsortedKey;
+      final isUnsorted = !hasSiblingBucket &&
+          key.trim().toLowerCase() == _legacyUnsortedKey;
       final urls = _urlList(v);
       if (isUnsorted) {
         unsorted.addAll(urls);
@@ -223,6 +230,71 @@ class GalleryAssignResult {
           : const [],
       roomTag: json['room_tag']?.toString(),
       categories: GalleryCategories.fromJson(json['gallery_categories']),
+      availableTags: (json['available_tags'] is List)
+          ? (json['available_tags'] as List).map((e) => e.toString()).toList()
+          : const [],
+    );
+  }
+}
+
+/// Response of `PUT /api/v1/mobile/properties/{id}/gallery/reorder`.
+///
+/// Mirrors [GalleryAssignResult]'s "re-render straight from the response"
+/// shape, but for a pure drag-reorder: [roomTag] echoes back which scope was
+/// reordered (a room's bucket, or `null` for the master grid — every photo on
+/// the property, which is also what sets the cover photo and portal order).
+/// [galleryFingerprint] is the value to pass into the next reorder call for
+/// conflict protection.
+class GalleryReorderResult {
+  final String message;
+  final String? roomTag;
+  final List<String> unknownImages;
+  final List<String> galleryImages;
+  final GalleryCategories categories;
+  final String? galleryFingerprint;
+
+  const GalleryReorderResult({
+    required this.message,
+    required this.roomTag,
+    required this.unknownImages,
+    required this.galleryImages,
+    required this.categories,
+    required this.galleryFingerprint,
+  });
+
+  factory GalleryReorderResult.fromJson(Map<String, dynamic> json) {
+    return GalleryReorderResult(
+      message: json['message']?.toString() ?? 'Photo order updated.',
+      roomTag: json['room_tag']?.toString(),
+      unknownImages: (json['unknown_images'] is List)
+          ? (json['unknown_images'] as List).map((e) => e.toString()).toList()
+          : const [],
+      galleryImages: (json['gallery_images'] is List)
+          ? (json['gallery_images'] as List).map((e) => e.toString()).toList()
+          : const [],
+      categories: GalleryCategories.fromJson(json['gallery_categories']),
+      galleryFingerprint: json['gallery_fingerprint']?.toString(),
+    );
+  }
+}
+
+/// Response of `PUT /api/v1/mobile/properties/{id}/gallery/tags/reorder`.
+///
+/// A partial `tags` request is valid — the server leaves anything omitted at
+/// the end — so [availableTags] is always the property's *complete* order and
+/// the caller can adopt it wholesale, same as [GalleryTagsData.withAvailable].
+class TagReorderResult {
+  final String message;
+  final List<String> availableTags;
+
+  const TagReorderResult({
+    required this.message,
+    required this.availableTags,
+  });
+
+  factory TagReorderResult.fromJson(Map<String, dynamic> json) {
+    return TagReorderResult(
+      message: json['message']?.toString() ?? 'Tag order updated.',
       availableTags: (json['available_tags'] is List)
           ? (json['available_tags'] as List).map((e) => e.toString()).toList()
           : const [],

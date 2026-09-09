@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:corex_mobile/models/contact.dart';
+import 'package:corex_mobile/models/contact_notes_testimonials.dart';
 import 'package:corex_mobile/screens/contacts/contact_show_screen.dart';
 import 'package:corex_mobile/services/api_service.dart';
 
@@ -13,6 +14,15 @@ class _FakeApi extends ApiService {
     if (contact == null) throw ApiException(404, 'not found');
     return contact!;
   }
+
+  // The Notes tab fetches both lists on mount; stub them so tests never hit
+  // the real network.
+  @override
+  Future<List<ContactNote>> getContactNotes(int contactId) async => const [];
+
+  @override
+  Future<List<ContactTestimonial>> getContactTestimonials(int contactId) async =>
+      const [];
 }
 
 Contact _contact({
@@ -69,7 +79,8 @@ void main() {
     await tester.pumpWidget(_wrap(ContactShowScreen(contactId: 5, api: api)));
     await tester.pumpAndSettle();
 
-    expect(_tabLabels(tester), ['Details', 'Matches · 1', 'Properties · 2']);
+    expect(_tabLabels(tester),
+        ['Details', 'Matches · 1', 'Properties · 2', 'Notes']);
   });
 
   testWidgets('Details is the landing tab and holds the contact details',
@@ -127,7 +138,8 @@ void main() {
     await tester.pumpWidget(_wrap(ContactShowScreen(contactId: 5, api: api)));
     await tester.pumpAndSettle();
 
-    expect(_tabLabels(tester), ['Details', 'Matches · 0', 'Properties · 0']);
+    expect(_tabLabels(tester),
+        ['Details', 'Matches · 0', 'Properties · 0', 'Notes']);
 
     await _openTab(tester, 'Matches');
     expect(find.text('No matches yet'), findsOneWidget);

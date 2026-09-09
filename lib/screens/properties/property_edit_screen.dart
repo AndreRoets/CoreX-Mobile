@@ -80,6 +80,10 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
   /// including the `gallery_tags` field.
   GalleryTagsData? _liveTags;
 
+  /// Last-known `gallery_fingerprint`, threaded into every reorder call for
+  /// conflict protection. See [PropertyGallery.galleryFingerprint].
+  String? _galleryFingerprint;
+
   /// The Spaces catalog, used only to tell a space-derived tag ("Scullery",
   /// "Braai Room") from a custom one the agent typed. It is fetched rather
   /// than hard-coded because the catalog now runs to about fifty space types
@@ -188,6 +192,25 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
     });
   }
 
+  /// Adopts a `gallery/reorder` response — the recomputed gallery plus the
+  /// fresh fingerprint the next reorder call needs.
+  void _adoptReorderResult(GalleryReorderResult result) {
+    setState(() {
+      _gallery = result.categories;
+      _galleryFingerprint = result.galleryFingerprint;
+    });
+  }
+
+  /// Adopts a `gallery/tags/reorder` response — the room order the agent
+  /// dragged.
+  void _adoptTagReorderResult(TagReorderResult result) {
+    if (result.availableTags.isEmpty) return;
+    setState(() {
+      _liveTags = (_liveTags ?? GalleryTagsData.empty(widget.propertyId))
+          .withAvailable(result.availableTags);
+    });
+  }
+
   Future<void> _loadProperty() async {
     final provider = context.read<PropertyProvider>();
     try {
@@ -244,6 +267,7 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
         // `categories` (as this did) is what left untagged photos on the
         // property but on no screen.
         _gallery = GalleryCategories.fromJson(p.galleryCategories);
+        _galleryFingerprint = p.galleryFingerprint;
         _loaded = true;
       });
     }
@@ -839,8 +863,11 @@ class _PropertyEditScreenState extends State<PropertyEditScreen> {
             propertyId: widget.propertyId,
             gallery: _gallery,
             availableTags: liveTags,
+            galleryFingerprint: _galleryFingerprint,
             enabled: !_saving,
             onAssigned: _adoptAssignResult,
+            onReordered: _adoptReorderResult,
+            onTagsReordered: _adoptTagReorderResult,
             onRefreshRequested: _loadProperty,
             // Only ever called from a space section header, always with that
             // space's name 2014 so the sheet opens locked to it rather than

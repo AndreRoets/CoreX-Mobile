@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:corex_mobile/models/gallery_tags.dart';
+import 'package:corex_mobile/models/property.dart';
 import 'package:corex_mobile/models/property_compliance.dart';
 import 'package:corex_mobile/models/property_drive.dart';
 import 'package:corex_mobile/models/property_overview.dart';
+import 'package:corex_mobile/screens/properties/property_gallery_screen.dart';
 import 'package:corex_mobile/screens/properties/property_overview_screen.dart';
 import 'package:corex_mobile/services/api_service.dart';
 
@@ -49,6 +51,20 @@ class _FakeApi extends ApiService {
     if (addError != null) throw addError!;
     return addResult!;
   }
+
+  /// Stubbed so the Gallery tab's own fetch (separate from the overview
+  /// payload — see `_PropertyOverviewScreenState._loadGallery`) never reaches
+  /// the network either. Defaults to an empty gallery.
+  Property? property;
+  GalleryTagsData? galleryTags;
+
+  @override
+  Future<Property> getProperty(int id) async =>
+      property ?? Property(id: id, address: '');
+
+  @override
+  Future<GalleryTagsData> getGalleryTags(int id) async =>
+      galleryTags ?? GalleryTagsData.empty(id);
 }
 
 PropertyOverview _baseOverview({
@@ -83,6 +99,18 @@ List<String> _tabLabels(WidgetTester tester) => tester
 Widget _wrap(Widget child) =>
     MaterialApp(theme: ThemeData.dark(), home: child);
 
+/// A bounded stand-in for `pumpAndSettle()`, needed once navigation reaches
+/// `PropertyGalleryScreen` — its photo grid is `CachedNetworkImage`, and
+/// under the test binding's mocked HttpClient (every request completes 400)
+/// its failed-fetch handling keeps scheduling frames rather than settling,
+/// so `pumpAndSettle()` never detects quiescence there. A fixed run of pumps
+/// — comfortably past any standard Material transition — stands in for it.
+Future<void> _settle(WidgetTester tester) async {
+  for (var i = 0; i < 6; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}
+
 /// Each tab is its own lazily-built scroll view, so a viewport tall enough to
 /// hold a whole tab keeps assertions from having to scroll.
 void _useTallViewport(WidgetTester tester) {
@@ -97,6 +125,10 @@ Future<void> _openTab(WidgetTester tester, String label) async {
   final tab = find.byWidgetPredicate(
       (w) => w is Tab && (w.text ?? '').startsWith(label));
   expect(tab, findsOneWidget, reason: 'no "$label" tab on screen');
+  // The tab bar scrolls once there are more tabs than fit, so a tab further
+  // right than the viewport is laid out but not yet hit-testable.
+  await tester.ensureVisible(tab);
+  await tester.pumpAndSettle();
   await tester.tap(tab);
   await tester.pumpAndSettle();
 }
@@ -428,7 +460,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(_tabLabels(tester),
-          ['Info', 'Compliance', 'Contacts · 0', 'Drive']);
+          ['Info', 'Compliance', 'Contacts · 0', 'Gallery · 0', 'Drive']);
       // Info is the landing tab, so at-a-glance content is visible unprompted.
       expect(find.text('Where this listing is published'), findsOneWidget);
     });
@@ -482,6 +514,10 @@ void main() {
     // The negative case is covered by the exact label list above.
     testWidgets('Inspections tab appears when the server allows it',
         (tester) async {
+      // The tab bar is scrollable once there are this many tabs; a default
+      // 800px-wide test viewport leaves Inspections (now sixth) off-screen
+      // and unhittable.
+      _useTallViewport(tester);
       final api = _FakeApi()
         ..overview = _baseOverview(rentalInspections: true);
 
@@ -514,6 +550,72 @@ void main() {
 
       await _openTab(tester, 'Contacts');
       expect(find.text('Linked Person'), findsOneWidget);
+    });
+  });
+
+  group('Gallery tab', () {
+    testWidgets('summary card counts photos and rooms, and opens the full '
+        'gallery manager', (tester) async {
+      _useTallViewport(tester);
+      final api = _FakeApi()
+        ..overview = _baseOverview()
+        ..property = Property(
+          id: 7,
+          address: '',
+          galleryCategories: {
+            'categories': {
+              'Kitchen': ['https://x/a.jpg'],
+            },
+            'unsorted': [],
+          },
+          galleryTags: const ['Kitchen'],
+          galleryFingerprint: 'sha1-abc',
+        )
+        ..galleryTags = GalleryTagsData.fromJson({
+          'property_id': 7,
+          'available_tags': ['Kitchen'],
+          'tag_counts': {'Kitchen': 1},
+          'untagged_count': 0,
+        });
+
+      await tester.pumpWidget(_wrap(
+        PropertyOverviewScreen(propertyId: 7, api: api),
+      ));
+      await tester.pumpAndSettle();
+
+      // The tab count comes from the gallery fetch, not the overview's
+      // photos_count — so it only settles once that fetch resolves.
+      expect(_tabLabels(tester), contains('Gallery · 1'));
+
+      await _openTab(tester, 'Gallery');
+      expect(find.text('1 photo'), findsOneWidget);
+      expect(find.text('1 room'), findsOneWidget);
+
+      // Sorting/filing 92 photos in a cramped in-tab strip is the exact
+      // problem this button exists to solve — it hands off to the
+      // full-screen manager instead.
+      await tester.tap(find.text('Manage Gallery'));
+      await _settle(tester);
+
+      expect(find.byType(PropertyGalleryScreen), findsOneWidget);
+      // The pushed screen does its own fetch through the same fake API, so
+      // the room it was seeded with renders there too.
+      expect(find.text('Kitchen'), findsOneWidget);
+    });
+
+    testWidgets('summary card shows zero counts when the property has no '
+        'photos', (tester) async {
+      _useTallViewport(tester);
+      final api = _FakeApi()..overview = _baseOverview();
+
+      await tester.pumpWidget(_wrap(
+        PropertyOverviewScreen(propertyId: 7, api: api),
+      ));
+      await tester.pumpAndSettle();
+
+      await _openTab(tester, 'Gallery');
+      expect(find.text('0 photos'), findsOneWidget);
+      expect(find.text('Not sorted into rooms yet'), findsOneWidget);
     });
   });
 

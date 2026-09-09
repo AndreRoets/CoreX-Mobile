@@ -60,6 +60,11 @@ class Property {
   /// without an extra round-trip.
   final List<String> galleryTags;
 
+  /// `gallery_fingerprint` — a sha1 of the current gallery order, echoed back
+  /// on every `gallery/reorder` call for conflict protection. `null` on an
+  /// older server that doesn't send one yet; reorder calls simply omit it.
+  final String? galleryFingerprint;
+
   Property({
     required this.id,
     required this.address,
@@ -105,6 +110,7 @@ class Property {
     this.galleryImages = const [],
     this.galleryCategories,
     this.galleryTags = const [],
+    this.galleryFingerprint,
   });
 
   factory Property.fromJson(Map<String, dynamic> json) {
@@ -165,13 +171,25 @@ class Property {
       features: json['features'] != null
           ? List<String>.from(json['features'])
           : const [],
-      galleryImages: json['gallery_images'] != null
-          ? List<String>.from(json['gallery_images'])
-          : const [],
-      galleryCategories: json['gallery_categories'] as Map<String, dynamic>?,
-      galleryTags: json['gallery_tags'] != null
-          ? List<String>.from(json['gallery_tags'])
-          : const [],
+      galleryImages: _stringList(json['gallery_images']),
+      // PHP's json_encode turns an empty associative array into `[]`, so an
+      // empty gallery arrives as a List here — `as Map` on it would throw
+      // and fail the whole property fetch for the one case that's trivial.
+      galleryCategories: json['gallery_categories'] is Map
+          ? Map<String, dynamic>.from(json['gallery_categories'] as Map)
+          : null,
+      galleryTags: _stringList(json['gallery_tags']),
+      galleryFingerprint: json['gallery_fingerprint']?.toString(),
     );
   }
+
+  /// Non-list → empty; non-string entries are stringified rather than
+  /// throwing (`List<String>.from` would).
+  static List<String> _stringList(dynamic v) => v is List
+      ? v
+          .where((e) => e != null)
+          .map((e) => e.toString())
+          .where((s) => s.isNotEmpty)
+          .toList()
+      : const [];
 }

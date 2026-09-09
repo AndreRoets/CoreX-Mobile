@@ -32,6 +32,8 @@ import 'screens/home/home_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/app_update_service.dart';
 import 'services/client_auth_service.dart';
+import 'services/image_cache.dart';
+import 'services/image_cache_diagnostics.dart';
 import 'services/messaging_service.dart';
 import 'services/upload_service.dart';
 import 'utils/app_time.dart';
@@ -62,6 +64,9 @@ Future<void> logoutAndReset(BuildContext context) async {
   final branding = context.read<BrandingProvider>();
   final auth = context.read<AuthProvider>();
   branding.reset();
+  // Cached listing photos are the previous account's data on a shared
+  // device; best-effort, never blocks the sign-out.
+  CoreXImageCache.clear().ignore();
   await auth.logout();
   rootNavigatorKey.currentState?.pushAndRemoveUntil(
     MaterialPageRoute(builder: (_) => const AppBootstrap()),
@@ -130,6 +135,9 @@ void main() {
       debugPrint(kFirstFrameMarker);
       if (kDebugMode) unawaited(_dropFirstFrameBreadcrumb());
       unawaited(_initDeferredServices());
+      // One greppable COREX_IMAGE_CACHE line — the only evidence an iOS build
+      // gives us that the photo cache's storage plumbing works there.
+      unawaited(ImageCacheDiagnostics.logStartupSelfTest());
     });
   }, (error, stack) {
     debugPrint('[zone] uncaught: $error\n$stack');

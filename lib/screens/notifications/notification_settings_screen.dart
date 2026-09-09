@@ -82,6 +82,8 @@ class _NotificationSettingsScreenState
                 _pushRelationshipNote(context),
                 const SizedBox(height: 8),
                 _scheduleHint(context),
+                const SizedBox(height: 8),
+                _testNotificationHint(context),
               ],
             ),
       ),
@@ -155,6 +157,38 @@ class _NotificationSettingsScreenState
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _testNotificationHint(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppTheme.radius),
+      onTap: () async {
+        await MessagingService.instance.sendTestNotification();
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Test notification sent')),
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        child: Row(
+          children: [
+            Icon(Icons.notifications_active_outlined,
+                size: 16, color: AppTheme.textSecondary(context)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Send a test notification to confirm this device receives them.',
+                style: TextStyle(
+                    fontSize: 11.5, color: AppTheme.textSecondary(context)),
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded,
+                size: 18, color: AppTheme.textSecondary(context)),
+          ],
+        ),
       ),
     );
   }

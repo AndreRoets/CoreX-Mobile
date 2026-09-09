@@ -7,9 +7,11 @@ import 'package:http_parser/http_parser.dart' show MediaType;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/env.dart';
+import '../models/agent_profile.dart';
 import '../models/calendar_form.dart';
 import '../models/contact.dart';
 import '../models/contact_compliance.dart';
+import '../models/contact_notes_testimonials.dart';
 import '../models/core_match.dart';
 import '../models/dashboard_data.dart';
 import '../models/gallery_tags.dart';
@@ -562,6 +564,107 @@ class ApiService {
     await _handleUnauthorized(response.statusCode, response.body);
     throw ApiException(response.statusCode, 'Failed to load profile');
   }
+
+  // --- Agent profile (My Portal → Profile parity) ---
+
+  /// `GET /api/v1/mobile/profile` — the agent's own editable profile fields.
+  /// Same row the web app's My Portal → Profile tab reads and writes.
+  Future<AgentProfile> getAgentProfile() async {
+    if (useMockData) {
+      await Future.delayed(const Duration(milliseconds: 400));
+      return AgentProfile.fromJson(_mockAgentProfile);
+    }
+
+    final response = await http
+        .get(Uri.parse('$baseUrl/v1/mobile/profile'), headers: await _headers())
+        .timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      if (body is Map<String, dynamic>) return AgentProfile.fromJson(body);
+      throw ApiException(response.statusCode, 'Failed to load profile');
+    }
+    await _handleUnauthorized(response.statusCode, response.body);
+    throw ApiException(response.statusCode,
+        _messageOr(response.body, 'Failed to load profile'));
+  }
+
+  /// `PATCH /api/v1/mobile/profile`. Only [cell] is required server-side;
+  /// the rest are sent as empty strings when blank so a cleared field is
+  /// cleared on the server too (omitting the key would leave it untouched).
+  ///
+  /// Throws [ValidationException] on 422 so the form can show field errors
+  /// inline (`cell`, `whatsapp_number`, …), and a plain [ApiException] 403
+  /// when the user has no edit permission.
+  Future<AgentProfile> updateAgentProfile({
+    required String cell,
+    String? whatsappNumber,
+    String? ffcNumber,
+    String? facebookUrl,
+    String? instagramUrl,
+  }) async {
+    if (useMockData) {
+      await Future.delayed(const Duration(milliseconds: 400));
+      _mockAgentProfile
+        ..['cell'] = cell
+        ..['whatsapp_number'] = whatsappNumber
+        ..['ffc_number'] = ffcNumber
+        ..['website_social_facebook'] = facebookUrl
+        ..['website_social_instagram'] = instagramUrl;
+      return AgentProfile.fromJson(_mockAgentProfile);
+    }
+
+    final response = await http
+        .patch(
+          Uri.parse('$baseUrl/v1/mobile/profile'),
+          headers: await _headers(),
+          body: jsonEncode({
+            'cell': cell,
+            'whatsapp_number': whatsappNumber ?? '',
+            'ffc_number': ffcNumber ?? '',
+            'website_social_facebook': facebookUrl ?? '',
+            'website_social_instagram': instagramUrl ?? '',
+          }),
+        )
+        .timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      if (body is Map<String, dynamic>) return AgentProfile.fromJson(body);
+      throw ApiException(response.statusCode, 'Failed to save profile');
+    }
+    if (response.statusCode == 422) throw _parseValidationError(response.body);
+    await _handleUnauthorized(response.statusCode, response.body);
+    throw ApiException(response.statusCode,
+        _messageOr(response.body, 'Failed to save profile'));
+  }
+
+  /// The server's `message` when the body carries one, else [fallback].
+  static String _messageOr(String body, String fallback) {
+    try {
+      final json = jsonDecode(body);
+      if (json is Map && json['message'] is String) {
+        final msg = (json['message'] as String).trim();
+        if (msg.isNotEmpty) return msg;
+      }
+    } catch (_) {}
+    return fallback;
+  }
+
+  static final Map<String, dynamic> _mockAgentProfile = {
+    'id': 1,
+    'name': 'John Moosa',
+    'email': 'john@hfcoastal.co.za',
+    'role': 'agent',
+    'role_label': 'Agent',
+    'cell': '0821234567',
+    'whatsapp_number': '0821234567',
+    'ffc_number': 'FF123456',
+    'website_social_facebook': 'https://facebook.com/john.moosa',
+    'website_social_instagram': 'https://instagram.com/john.moosa',
+    'public_profile_url': 'https://corexos.co.za/corex/agents/john/mock',
+    'can_edit': true,
+  };
 
   // --- Today (card-driven cockpit) ---
 
@@ -1595,6 +1698,11 @@ class ApiService {
       }
     } catch (_) {}
     if (body.isEmpty) return 'Failed to $verb property (empty response)';
+    // A proxy/nginx error page is HTML; "<html><head><title>502 Bad
+    // Gateway" in a snackbar helps nobody.
+    if (body.trimLeft().startsWith('<')) {
+      return 'Failed to $verb — the server returned an error page';
+    }
     return body.length > 400
         ? '${body.substring(0, 400)}…'
         : body;
@@ -2094,6 +2202,174 @@ class ApiService {
         response.statusCode, _serverErrorMessage(response.body, 'file photos'));
   }
 
+  /// `PUT /v1/mobile/properties/{id}/gallery/reorder` — persists a drag
+  /// result for one scope: [roomTag] reorders just that room's bucket, and
+  /// omitting it (`null`) reorders the master grid — every photo on the
+  /// property, which is also what sets the cover photo and portal order.
+  ///
+  /// [images] must be the full ordered URL list for that scope (the drag
+  /// result). This call can only reorder — a URL left out of the list is kept
+  /// anyway (appended at the end, never deleted), and an unrecognised URL
+  /// comes back in the result's `unknownImages` rather than failing the call.
+  ///
+  /// [fingerprint] is the last `gallery_fingerprint` the caller saw, for
+  /// optimistic-concurrency protection. Pass it when available; a mismatch
+  /// throws [StaleGalleryFingerprintException] rather than applying the drag
+  /// over a gallery that has since changed elsewhere.
+  Future<GalleryReorderResult> reorderGalleryImages(
+    int propertyId,
+    List<String> images, {
+    String? roomTag,
+    String? fingerprint,
+  }) async {
+    if (images.isEmpty) {
+      throw ApiException(422, 'Nothing to reorder');
+    }
+    final uri = Uri.parse(
+        '$baseUrl/v1/mobile/properties/$propertyId/gallery/reorder');
+    final reqBody = jsonEncode({
+      'images': images,
+      'room_tag': roomTag,
+      if (fingerprint != null) 'gallery_fingerprint': fingerprint,
+    });
+    // Summarised, not dumped: a 90-photo body is ~10KB of URLs and logcat
+    // truncates the line long before the keys after the array, which is
+    // exactly the part (room_tag, fingerprint) worth seeing.
+    if (kDebugMode) {
+      debugPrint('[galleryReorder] PUT $uri images=${images.length} '
+          'room_tag=${jsonEncode(roomTag)} '
+          'fingerprint=${fingerprint ?? '(none)'} '
+          'first=${images.first.split('/').last}');
+    }
+    // Longer than the default: the server re-derives and re-fingerprints
+    // the whole gallery, and a timeout here is the worst kind of failure —
+    // the app reverts the drag while the server may have applied it, so the
+    // next drag goes out with a stale fingerprint.
+    final response = await http
+        .put(uri, headers: await _headers(), body: reqBody)
+        .timeout(const Duration(seconds: 30));
+    if (kDebugMode) {
+      debugPrint('[galleryReorder] ${response.statusCode}: '
+          '${_summariseGalleryBody(response)}');
+    }
+
+    await _handleUnauthorized(response.statusCode, response.body);
+
+    Map<String, dynamic>? body;
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map) body = Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+
+    if (response.statusCode == 200) {
+      if (body == null) {
+        throw ApiException(200, "The server's response could not be read");
+      }
+      invalidateOverviewCache(propertyId);
+      return GalleryReorderResult.fromJson(body);
+    }
+
+    if (response.statusCode == 409) {
+      throw StaleGalleryFingerprintException();
+    }
+
+    if (response.statusCode == 403) {
+      throw ApiException(
+          403, "You don't have permission to edit this property's photos");
+    }
+
+    throw ApiException(response.statusCode,
+        _serverErrorMessage(response.body, 'reorder photos'));
+  }
+
+  /// Debug-log shape of a gallery response: every top-level key, with list
+  /// and map values reduced to their length so a 90-URL payload stays on
+  /// one readable logcat line. Non-JSON / error bodies are passed through
+  /// (capped) since those are short and the text is the point.
+  static String _summariseGalleryBody(http.Response response) {
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map) {
+        final parts = decoded.entries.map((e) {
+          final v = e.value;
+          if (v is List) return '${e.key}=[${v.length}]';
+          if (v is Map) {
+            final inner = v.entries
+                .map((i) => i.value is List
+                    ? '${i.key}:${(i.value as List).length}'
+                    : i.value is Map
+                        ? '${i.key}:{${(i.value as Map).length}}'
+                        : '${i.key}:${i.value}')
+                .join(',');
+            return '${e.key}={$inner}';
+          }
+          return '${e.key}=${jsonEncode(v)}';
+        });
+        return parts.join(' ');
+      }
+    } catch (_) {}
+    final body = response.body;
+    return body.length > 600 ? '${body.substring(0, 600)}…' : body;
+  }
+
+  /// `PUT /v1/mobile/properties/{id}/gallery/tags/reorder` — persists the
+  /// room order the agent dragged. [tags] may be a partial list; anything
+  /// left out stays at the end automatically, so callers only need to send
+  /// what actually moved.
+  ///
+  /// Throws [ApiException] 422 when a name doesn't validate against this
+  /// property's current spaces — should not normally happen if the caller
+  /// only ever sends names from `available_tags`.
+  Future<TagReorderResult> reorderGalleryTags(
+      int propertyId, List<String> tags) async {
+    if (tags.isEmpty) {
+      throw ApiException(422, 'Nothing to reorder');
+    }
+    final uri = Uri.parse(
+        '$baseUrl/v1/mobile/properties/$propertyId/gallery/tags/reorder');
+    final reqBody = jsonEncode({'tags': tags});
+    if (kDebugMode) debugPrint('[galleryTagsReorder] PUT $uri body: $reqBody');
+    final response = await http
+        .put(uri, headers: await _headers(), body: reqBody)
+        .timeout(_timeout);
+    if (kDebugMode) {
+      debugPrint('[galleryTagsReorder] ${response.statusCode}: '
+          '${_summariseGalleryBody(response)}');
+    }
+
+    await _handleUnauthorized(response.statusCode, response.body);
+
+    if (response.statusCode == 200) {
+      Map<String, dynamic>? body;
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map) body = Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+      if (body == null) {
+        throw ApiException(200, "The server's response could not be read");
+      }
+      return TagReorderResult.fromJson(body);
+    }
+
+    if (response.statusCode == 422) {
+      String msg = 'Some of those rooms are no longer on this property';
+      try {
+        final body = jsonDecode(response.body);
+        if (body is Map && body['message'] is String) {
+          msg = body['message'] as String;
+        }
+      } catch (_) {}
+      throw ApiException(422, msg);
+    }
+
+    if (response.statusCode == 403) {
+      throw ApiException(403, "You don't have permission to edit tags");
+    }
+
+    throw ApiException(response.statusCode,
+        _serverErrorMessage(response.body, 'reorder tags'));
+  }
+
   /// Best-effort MIME type for an outgoing multipart part, derived from the
   /// file extension. Without an explicit content-type the `http` package can
   /// send `application/octet-stream`, which some backends reject. Pass
@@ -2264,6 +2540,9 @@ class ApiService {
     final status = streamed.statusCode;
 
     if (status == 200 || status == 201) {
+      // The overview's photo count / cover is cached for a minute; a new
+      // photo must show up there like assign/reorder/delete already do.
+      invalidateOverviewCache(propertyId);
       try {
         final json = jsonDecode(body);
         if (json is Map) {
@@ -3032,6 +3311,225 @@ class ApiService {
     throw ApiException(response.statusCode, _serverErrorMessage(response.body, 'create match'));
   }
 
+  // --- Contact Notes & Testimonials ---
+  //
+  // Same DB rows the web cockpit's "Notes & Testimonials" contact tab reads
+  // and writes — no client-side merge logic, just re-fetch. See
+  // `.ai/specs/contact-notes-testimonials.md` on the backend repo.
+
+  /// 403 here means the contact is visible but outside this agent's *edit*
+  /// scope (the assistant-narrower-than-view case) — never a session issue.
+  String _contactEditForbiddenMessage(String body) => _forbiddenMessage(
+      body, fallback: "You don't have permission to edit this contact.");
+
+  Future<List<ContactNote>> getContactNotes(int contactId) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/v1/mobile/contacts/$contactId/notes'),
+            headers: await _headers())
+        .timeout(_timeout);
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      final list = body is Map ? (body['notes'] as List? ?? const []) : const [];
+      return list
+          .whereType<Map>()
+          .map((e) => ContactNote.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(403, _contactEditForbiddenMessage(response.body));
+    }
+    if (response.statusCode == 404) {
+      throw ContactSubresourceStaleException(_forbiddenMessage(response.body, fallback: 'Not found'));
+    }
+    throw ApiException(response.statusCode, 'Failed to load notes');
+  }
+
+  Future<ContactNote> createContactNote(int contactId, {String? type, String? body}) async {
+    final response = await http
+        .post(Uri.parse('$baseUrl/v1/mobile/contacts/$contactId/notes'),
+            headers: await _headers(),
+            body: jsonEncode({
+              if (type != null) 'type': type,
+              if (body != null) 'body': body,
+            }))
+        .timeout(_timeout);
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final json = jsonDecode(response.body);
+      final map = json is Map && json['note'] is Map
+          ? Map<String, dynamic>.from(json['note'])
+          : Map<String, dynamic>.from(json as Map);
+      return ContactNote.fromJson(map);
+    }
+    if (response.statusCode == 422) throw _parseValidationError(response.body);
+    if (response.statusCode == 403) {
+      throw ApiException(403, _contactEditForbiddenMessage(response.body));
+    }
+    if (response.statusCode == 404) {
+      throw ContactSubresourceStaleException(_forbiddenMessage(response.body, fallback: 'Not found'));
+    }
+    throw ApiException(response.statusCode, _serverErrorMessage(response.body, 'add note'));
+  }
+
+  /// Always sends both fields (either may be `null`), so an edit that only
+  /// means to change the body never silently clears an existing `type` — the
+  /// caller passes the type it wants to keep (or `null` to explicitly clear
+  /// it), never omits it by accident.
+  Future<ContactNote> updateContactNote(int contactId, int noteId,
+      {String? type, String? body}) async {
+    final response = await http
+        .put(Uri.parse('$baseUrl/v1/mobile/contacts/$contactId/notes/$noteId'),
+            headers: await _headers(),
+            body: jsonEncode({'type': type, 'body': body}))
+        .timeout(_timeout);
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body);
+      final map = json is Map && json['note'] is Map
+          ? Map<String, dynamic>.from(json['note'])
+          : Map<String, dynamic>.from(json as Map);
+      return ContactNote.fromJson(map);
+    }
+    if (response.statusCode == 422) throw _parseValidationError(response.body);
+    if (response.statusCode == 403) {
+      throw ApiException(403, _contactEditForbiddenMessage(response.body));
+    }
+    if (response.statusCode == 404) {
+      throw ContactSubresourceStaleException(_forbiddenMessage(response.body, fallback: 'Not found'));
+    }
+    throw ApiException(response.statusCode, _serverErrorMessage(response.body, 'update note'));
+  }
+
+  /// Not author-restricted: anyone who can edit this contact may delete any
+  /// note on it (same as the web) — unlike Command Center task notes.
+  Future<void> deleteContactNote(int contactId, int noteId) async {
+    final response = await http
+        .delete(Uri.parse('$baseUrl/v1/mobile/contacts/$contactId/notes/$noteId'),
+            headers: await _headers())
+        .timeout(_timeout);
+    if (response.statusCode == 200 || response.statusCode == 204) return;
+    if (response.statusCode == 403) {
+      throw ApiException(403, _contactEditForbiddenMessage(response.body));
+    }
+    if (response.statusCode == 404) {
+      throw ContactSubresourceStaleException(_forbiddenMessage(response.body, fallback: 'Not found'));
+    }
+    throw ApiException(response.statusCode, 'Failed to delete note');
+  }
+
+  Future<List<ContactTestimonial>> getContactTestimonials(int contactId) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/v1/mobile/contacts/$contactId/testimonials'),
+            headers: await _headers())
+        .timeout(_timeout);
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      final list =
+          body is Map ? (body['testimonials'] as List? ?? const []) : const [];
+      return list
+          .whereType<Map>()
+          .map((e) => ContactTestimonial.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    if (response.statusCode == 403) {
+      throw ApiException(403, _contactEditForbiddenMessage(response.body));
+    }
+    if (response.statusCode == 404) {
+      throw ContactSubresourceStaleException(_forbiddenMessage(response.body, fallback: 'Not found'));
+    }
+    throw ApiException(response.statusCode, 'Failed to load testimonials');
+  }
+
+  /// [agentId] outside the contact's own agency is silently ignored server-side
+  /// (falls back to the capturing user) — the agent picker offered to the user
+  /// should already be scoped to this agency, so this is a defensive backstop
+  /// rather than something the client needs to validate itself.
+  Future<ContactTestimonial> createContactTestimonial(
+    int contactId, {
+    required String body,
+    String? displayName,
+    int? rating,
+    int? agentId,
+  }) async {
+    final response = await http
+        .post(Uri.parse('$baseUrl/v1/mobile/contacts/$contactId/testimonials'),
+            headers: await _headers(),
+            body: jsonEncode({
+              'body': body,
+              if (displayName != null) 'display_name': displayName,
+              if (rating != null) 'rating': rating,
+              if (agentId != null) 'agent_id': agentId,
+            }))
+        .timeout(_timeout);
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final json = jsonDecode(response.body);
+      final map = json is Map && json['testimonial'] is Map
+          ? Map<String, dynamic>.from(json['testimonial'])
+          : Map<String, dynamic>.from(json as Map);
+      return ContactTestimonial.fromJson(map);
+    }
+    if (response.statusCode == 422) throw _parseValidationError(response.body);
+    if (response.statusCode == 403) {
+      throw ApiException(403, _contactEditForbiddenMessage(response.body));
+    }
+    if (response.statusCode == 404) {
+      throw ContactSubresourceStaleException(_forbiddenMessage(response.body, fallback: 'Not found'));
+    }
+    throw ApiException(response.statusCode, _serverErrorMessage(response.body, 'add testimonial'));
+  }
+
+  Future<ContactTestimonial> updateContactTestimonial(
+    int contactId,
+    int testimonialId, {
+    required String body,
+    String? displayName,
+    int? rating,
+    int? agentId,
+  }) async {
+    final response = await http
+        .put(
+            Uri.parse(
+                '$baseUrl/v1/mobile/contacts/$contactId/testimonials/$testimonialId'),
+            headers: await _headers(),
+            body: jsonEncode({
+              'body': body,
+              'display_name': displayName,
+              'rating': rating,
+              'agent_id': agentId,
+            }))
+        .timeout(_timeout);
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body);
+      final map = json is Map && json['testimonial'] is Map
+          ? Map<String, dynamic>.from(json['testimonial'])
+          : Map<String, dynamic>.from(json as Map);
+      return ContactTestimonial.fromJson(map);
+    }
+    if (response.statusCode == 422) throw _parseValidationError(response.body);
+    if (response.statusCode == 403) {
+      throw ApiException(403, _contactEditForbiddenMessage(response.body));
+    }
+    if (response.statusCode == 404) {
+      throw ContactSubresourceStaleException(_forbiddenMessage(response.body, fallback: 'Not found'));
+    }
+    throw ApiException(response.statusCode, _serverErrorMessage(response.body, 'update testimonial'));
+  }
+
+  Future<void> deleteContactTestimonial(int contactId, int testimonialId) async {
+    final response = await http
+        .delete(
+            Uri.parse(
+                '$baseUrl/v1/mobile/contacts/$contactId/testimonials/$testimonialId'),
+            headers: await _headers())
+        .timeout(_timeout);
+    if (response.statusCode == 200 || response.statusCode == 204) return;
+    if (response.statusCode == 403) {
+      throw ApiException(403, _contactEditForbiddenMessage(response.body));
+    }
+    if (response.statusCode == 404) {
+      throw ContactSubresourceStaleException(_forbiddenMessage(response.body, fallback: 'Not found'));
+    }
+    throw ApiException(response.statusCode, 'Failed to delete testimonial');
+  }
+
   Future<Property> createPropertyForContact(
       int contactId, String role, Map<String, dynamic> propertyBody) async {
     final merged = {
@@ -3551,6 +4049,16 @@ class StaleGalleryImagesException extends ApiException {
       : super(422, message);
 }
 
+/// Thrown by [ApiService.reorderGalleryImages] on a 409 `{ stale: true }` —
+/// the gallery changed server-side since the caller's `gallery_fingerprint`,
+/// so the reorder was rejected rather than silently applied over stale
+/// state. The caller should refresh the gallery and let the agent retry.
+class StaleGalleryFingerprintException extends ApiException {
+  StaleGalleryFingerprintException()
+      : super(409,
+            'The gallery changed elsewhere — refreshing before you retry.');
+}
+
 /// Thrown by create / update endpoints when the server returns a Laravel-
 /// shaped 422 validation error. [fieldErrors] maps field name → first error
 /// message, ready to surface inline in the form.
@@ -3582,6 +4090,15 @@ class MarketingBlockedException extends ApiException {
 class DuplicateContactException extends ApiException {
   final int duplicateId;
   DuplicateContactException(this.duplicateId, String message) : super(422, message);
+}
+
+/// Thrown by the contact notes/testimonials endpoints on a 404 — either the
+/// contact itself has dropped out of this agent's visibility, or the
+/// note/testimonial id no longer belongs to it. Both are stale-local-state,
+/// not a permission denial: the caller should re-fetch rather than show an
+/// error banner.
+class ContactSubresourceStaleException extends ApiException {
+  ContactSubresourceStaleException(String message) : super(404, message);
 }
 
 /// Thrown by the rental-inspection endpoints on a 422 whose `code` is
