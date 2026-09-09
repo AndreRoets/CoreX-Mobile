@@ -417,6 +417,10 @@ class _PropertyGalleryState extends State<PropertyGallery> {
             physics: const NeverScrollableScrollPhysics(),
             buildDefaultDragHandles: false,
             itemCount: liveTags.length,
+            // Codemagic runs unpinned stable (>=3.41) where onReorder is deprecated in
+            // favour of onReorderItem; that callback does not exist on the 3.38.7 used
+            // locally, so keep onReorder until the local toolchain is upgraded.
+            // ignore: deprecated_member_use
             onReorder: (oldIndex, newIndex) =>
                 _reorderTags(liveTags, oldIndex, newIndex),
             itemBuilder: (ctx, i) {
@@ -721,6 +725,7 @@ class _PropertyGalleryState extends State<PropertyGallery> {
                                 scrollDirection: Axis.horizontal,
                                 buildDefaultDragHandles: false,
                                 itemCount: urls.length,
+                                // ignore: deprecated_member_use
                                 onReorder: (oldIndex, newIndex) =>
                                     _reorderPhotos(
                                         roomTag, urls, oldIndex, newIndex),
