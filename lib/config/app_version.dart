@@ -13,7 +13,7 @@
 /// [kAppVersion], never by bumping [kAppBuildNumber] again — and App Store
 /// Connect's lookup API cannot tell you a train is closed before you try.
 const String kAppVersion = '1.0.12';
-const int kAppBuildNumber = 30;
+const int kAppBuildNumber = 33;
 
 /// e.g. `1.0.12 (30)` — for surfaces that want the build number too.
 const String kAppVersionFull = '$kAppVersion ($kAppBuildNumber)';
